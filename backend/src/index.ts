@@ -1,9 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { connectDB } from './db/connection';
 import { authRouter } from './routes/auth';
 import { postsRouter } from './routes/posts';
+import { usersRouter } from './routes/users';
 
 dotenv.config();
 
@@ -17,8 +19,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
+app.use('/api/users', usersRouter);
 
 connectDB()
   .then(() => {
