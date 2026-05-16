@@ -1,20 +1,40 @@
 'use client';
 
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, API_URL } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
+
+interface Post {
+  _id: string;
+  caption: string;
+  imageUrl?: string;
+  createdAt: string;
+  likes: string[];
+}
 
 export default function ProfilePage() {
   const { user, token, isLoading, updateUser } = useAuth();
   const router = useRouter();
 
+  // profil
   const [bio, setBio] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
-  const [error, setError] = useState('');
+  const [profileError, setProfileError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // posty
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [showPostForm, setShowPostForm] = useState(false);
+  const [caption, setCaption] = useState('');
+  const [postImage, setPostImage] = useState<File | null>(null);
+  const [postImagePreview, setPostImagePreview] = useState<string | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
+  const [postError, setPostError] = useState('');
+  const postFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
@@ -23,6 +43,24 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) setBio(user.bio || '');
   }, [user]);
+
+  const fetchPosts = useCallback(async () => {
+    if (!token) return;
+    setPostsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/posts/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setPosts(Array.isArray(data) ? data : []);
+    } catch {
+      setPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
   if (isLoading || !user) {
     return (
@@ -37,7 +75,7 @@ export default function ProfilePage() {
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setError('');
+    setProfileError('');
     setIsUploading(true);
     try {
       const form = new FormData();
@@ -51,7 +89,7 @@ export default function ProfilePage() {
       if (!res.ok) throw new Error(data.message);
       updateUser({ profilePicture: data.profilePicture });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Błąd przesyłania');
+      setProfileError(err instanceof Error ? err.message : 'Błąd przesyłania');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -60,16 +98,13 @@ export default function ProfilePage() {
 
   async function handleSaveBio(e: FormEvent) {
     e.preventDefault();
-    setError('');
+    setProfileError('');
     setSaveMsg('');
     setIsSaving(true);
     try {
       const res = await fetch(`${API_URL}/api/users/me`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bio }),
       });
       const data = await res.json();
@@ -78,39 +113,91 @@ export default function ProfilePage() {
       setSaveMsg('Zapisano!');
       setTimeout(() => setSaveMsg(''), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Błąd zapisu');
+      setProfileError(err instanceof Error ? err.message : 'Błąd zapisu');
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handlePostImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPostImage(file);
+    setPostImagePreview(URL.createObjectURL(file));
+  }
+
+  function clearPostImage() {
+    setPostImage(null);
+    setPostImagePreview(null);
+    if (postFileRef.current) postFileRef.current.value = '';
+  }
+
+  async function handleCreatePost(e: FormEvent) {
+    e.preventDefault();
+    setPostError('');
+    if (!caption.trim() && !postImage) {
+      setPostError('Dodaj tekst lub zdjęcie');
+      return;
+    }
+    setIsPosting(true);
+    try {
+      const form = new FormData();
+      form.append('caption', caption.trim());
+      if (postImage) form.append('image', postImage);
+
+      const res = await fetch(`${API_URL}/api/posts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      setCaption('');
+      clearPostImage();
+      setShowPostForm(false);
+      fetchPosts();
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Błąd dodawania posta');
+    } finally {
+      setIsPosting(false);
+    }
+  }
+
+  async function handleDeletePost(id: string) {
+    if (!confirm('Usunąć ten post?')) return;
+    await fetch(`${API_URL}/api/posts/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setPosts((prev) => prev.filter((p) => p._id !== id));
+  }
+
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
   return (
     <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
       <Navbar />
 
-      <main className="max-w-xl mx-auto px-4 pt-10 pb-16">
-        <div className="bg-white border border-[#dbdbdb] rounded-xl p-8">
+      <main className="max-w-2xl mx-auto px-4 pt-10 pb-16 space-y-6">
 
-          {/* Avatar */}
+        {/* Karta profilu */}
+        <div className="bg-white border border-[#dbdbdb] rounded-xl p-8">
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="relative group">
               {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt={user.username}
-                  className="w-28 h-28 rounded-full object-cover border-2 border-[#dbdbdb]"
-                />
+                <img src={avatarSrc} alt={user.username} className="w-28 h-28 rounded-full object-cover border-2 border-[#dbdbdb]" />
               ) : (
                 <div className="w-28 h-28 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-4xl font-bold border-2 border-[#dbdbdb]">
                   {user.username[0].toUpperCase()}
                 </div>
               )}
-
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                aria-label="Zmień zdjęcie profilowe"
+                className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 {isUploading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -121,25 +208,12 @@ export default function ProfilePage() {
                 )}
               </button>
             </div>
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50 transition-colors"
-            >
+            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50">
               {isUploading ? 'Przesyłanie...' : 'Zmień zdjęcie profilowe'}
             </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
 
-          {/* Info */}
           <div className="space-y-4 mb-6">
             <div>
               <p className="text-xs text-[#8e8e8e] mb-1 font-medium uppercase tracking-wide">Nazwa użytkownika</p>
@@ -153,12 +227,9 @@ export default function ProfilePage() {
 
           <div className="h-px bg-[#dbdbdb] mb-6" />
 
-          {/* Bio */}
           <form onSubmit={handleSaveBio} className="space-y-3">
             <div>
-              <label className="text-xs text-[#8e8e8e] font-medium uppercase tracking-wide block mb-1">
-                Bio
-              </label>
+              <label className="text-xs text-[#8e8e8e] font-medium uppercase tracking-wide block mb-1">Bio</label>
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
@@ -169,19 +240,133 @@ export default function ProfilePage() {
               />
               <p className="text-right text-xs text-[#8e8e8e] mt-1">{bio.length}/150</p>
             </div>
-
-            {error && <p className="text-red-500 text-xs">{error}</p>}
+            {profileError && <p className="text-red-500 text-xs">{profileError}</p>}
             {saveMsg && <p className="text-green-600 text-xs font-semibold">{saveMsg}</p>}
-
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="w-full bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors"
-            >
+            <button type="submit" disabled={isSaving} className="w-full bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
               {isSaving ? 'Zapisywanie...' : 'Zapisz profil'}
             </button>
           </form>
         </div>
+
+        {/* Sekcja postów */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[#262626] font-semibold text-base">Moje posty <span className="text-[#8e8e8e] font-normal">({posts.length})</span></h2>
+            <button
+              onClick={() => { setShowPostForm((v) => !v); setPostError(''); }}
+              className="flex items-center gap-1.5 bg-[#0095f6] text-white text-sm font-semibold px-4 py-1.5 rounded-lg hover:bg-[#1877f2] transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Nowy post
+            </button>
+          </div>
+
+          {/* Formularz nowego posta */}
+          {showPostForm && (
+            <div className="bg-white border border-[#dbdbdb] rounded-xl p-6 mb-4">
+              <form onSubmit={handleCreatePost} className="space-y-4">
+                {/* Podgląd zdjęcia */}
+                {postImagePreview ? (
+                  <div className="relative rounded-lg overflow-hidden">
+                    <img src={postImagePreview} alt="Podgląd" className="w-full max-h-72 object-cover" />
+                    <button
+                      type="button"
+                      onClick={clearPostImage}
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => postFileRef.current?.click()}
+                    className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-8 flex flex-col items-center gap-2 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors"
+                  >
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 3.75h-9A2.25 2.25 0 005.25 6v8.25" />
+                    </svg>
+                    <span className="text-sm font-medium">Dodaj zdjęcie (opcjonalnie)</span>
+                  </button>
+                )}
+                <input ref={postFileRef} type="file" accept="image/*" className="hidden" onChange={handlePostImageSelect} />
+
+                <textarea
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  maxLength={2200}
+                  rows={3}
+                  placeholder="Co słychać?"
+                  className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]"
+                />
+
+                {postError && <p className="text-red-500 text-xs">{postError}</p>}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowPostForm(false); setCaption(''); clearPostImage(); }}
+                    className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors"
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPosting}
+                    className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors"
+                  >
+                    {isPosting ? 'Dodawanie...' : 'Opublikuj'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Lista postów */}
+          {postsLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="w-7 h-7 border-2 border-[#dbdbdb] border-t-[#0095f6] rounded-full animate-spin" />
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="bg-white border border-[#dbdbdb] rounded-xl py-16 flex flex-col items-center gap-2 text-[#8e8e8e]">
+              <svg className="w-12 h-12" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+              </svg>
+              <p className="text-sm font-medium">Brak postów</p>
+              <p className="text-xs">Opublikuj swój pierwszy post!</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {posts.map((post) => (
+                <div key={post._id} className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
+                  {post.imageUrl && (
+                    <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
+                  )}
+                  <div className="px-5 py-4">
+                    {post.caption && (
+                      <p className="text-sm text-[#262626] whitespace-pre-wrap mb-3">{post.caption}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#8e8e8e]">{formatDate(post.createdAt)}</span>
+                      <button
+                        onClick={() => handleDeletePost(post._id)}
+                        className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
+                      >
+                        Usuń
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </main>
     </div>
   );
