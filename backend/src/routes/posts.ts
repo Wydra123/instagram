@@ -69,6 +69,39 @@ postsRouter.get('/', async (_req, res) => {
   }
 });
 
+postsRouter.put('/:id', requireAuth, upload.single('image'), async (req: Request, res: Response) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const post = await Post.findOne({ _id: req.params.id, author: req.userId } as any);
+    if (!post) { res.status(404).json({ message: 'Post nie istnieje lub brak uprawnień' }); return; }
+
+    const { caption, removeImage } = req.body;
+
+    if (removeImage === 'true' && post.imageUrl) {
+      fs.unlink(path.join(process.cwd(), post.imageUrl), () => {});
+      post.imageUrl = '';
+    }
+
+    if (req.file) {
+      if (post.imageUrl) fs.unlink(path.join(process.cwd(), post.imageUrl), () => {});
+      post.imageUrl = `/uploads/posts/${req.file.filename}`;
+    }
+
+    if (caption !== undefined) post.caption = caption.trim();
+
+    if (!post.caption && !post.imageUrl) {
+      res.status(400).json({ message: 'Post musi zawierać tekst lub zdjęcie' });
+      return;
+    }
+
+    await post.save();
+    const populated = await Post.findById(post._id).populate('author', 'username profilePicture');
+    res.json(populated);
+  } catch {
+    res.status(500).json({ message: 'Błąd serwera' });
+  }
+});
+
 postsRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

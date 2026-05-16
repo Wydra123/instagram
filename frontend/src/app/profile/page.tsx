@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, API_URL } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
+import ImageCropModal from '@/components/ImageCropModal';
 
 interface Post {
   _id: string;
@@ -25,7 +26,7 @@ export default function ProfilePage() {
   const [profileError, setProfileError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // posty
+  // nowy post
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
   const [showPostForm, setShowPostForm] = useState(false);
@@ -35,6 +36,20 @@ export default function ProfilePage() {
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState('');
   const postFileRef = useRef<HTMLInputElement>(null);
+
+  // cropper
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropTarget, setCropTarget] = useState<'post' | 'edit' | null>(null);
+
+  // edycja posta
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCaption, setEditCaption] = useState('');
+  const [editImage, setEditImage] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [editRemoveImage, setEditRemoveImage] = useState(false);
+  const [isEditSaving, setIsEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const editFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
@@ -72,6 +87,7 @@ export default function ProfilePage() {
 
   const avatarSrc = user.profilePicture ? `${API_URL}${user.profilePicture}` : null;
 
+  // --- profil ---
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -119,11 +135,37 @@ export default function ProfilePage() {
     }
   }
 
+  // --- cropper ---
+  function openCropper(file: File, target: 'post' | 'edit') {
+    setCropSrc(URL.createObjectURL(file));
+    setCropTarget(target);
+  }
+
+  function handleCropConfirm(croppedFile: File) {
+    if (cropTarget === 'post') {
+      setPostImage(croppedFile);
+      setPostImagePreview(URL.createObjectURL(croppedFile));
+    } else if (cropTarget === 'edit') {
+      setEditImage(croppedFile);
+      setEditImagePreview(URL.createObjectURL(croppedFile));
+      setEditRemoveImage(false);
+    }
+    setCropSrc(null);
+    setCropTarget(null);
+  }
+
+  function handleCropCancel() {
+    setCropSrc(null);
+    setCropTarget(null);
+    if (postFileRef.current) postFileRef.current.value = '';
+    if (editFileRef.current) editFileRef.current.value = '';
+  }
+
+  // --- nowy post ---
   function handlePostImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPostImage(file);
-    setPostImagePreview(URL.createObjectURL(file));
+    openCropper(file, 'post');
   }
 
   function clearPostImage() {
@@ -135,16 +177,12 @@ export default function ProfilePage() {
   async function handleCreatePost(e: FormEvent) {
     e.preventDefault();
     setPostError('');
-    if (!caption.trim() && !postImage) {
-      setPostError('Dodaj tekst lub zdjęcie');
-      return;
-    }
+    if (!caption.trim() && !postImage) { setPostError('Dodaj tekst lub zdjęcie'); return; }
     setIsPosting(true);
     try {
       const form = new FormData();
       form.append('caption', caption.trim());
       if (postImage) form.append('image', postImage);
-
       const res = await fetch(`${API_URL}/api/posts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -152,15 +190,62 @@ export default function ProfilePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-
-      setCaption('');
-      clearPostImage();
-      setShowPostForm(false);
+      setCaption(''); clearPostImage(); setShowPostForm(false);
       fetchPosts();
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Błąd dodawania posta');
     } finally {
       setIsPosting(false);
+    }
+  }
+
+  // --- edycja posta ---
+  function startEdit(post: Post) {
+    setEditingId(post._id);
+    setEditCaption(post.caption);
+    setEditImage(null);
+    setEditImagePreview(null);
+    setEditRemoveImage(false);
+    setEditError('');
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditImage(null);
+    setEditImagePreview(null);
+    if (editFileRef.current) editFileRef.current.value = '';
+  }
+
+  function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    openCropper(file, 'edit');
+  }
+
+  async function handleSaveEdit(e: FormEvent, postId: string) {
+    e.preventDefault();
+    setEditError('');
+    setIsEditSaving(true);
+    try {
+      const form = new FormData();
+      form.append('caption', editCaption.trim());
+      if (editRemoveImage) form.append('removeImage', 'true');
+      if (editImage) form.append('image', editImage);
+
+      const res = await fetch(`${API_URL}/api/posts/${postId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      setPosts((prev) => prev.map((p) => p._id === postId ? { ...p, caption: data.caption, imageUrl: data.imageUrl } : p));
+      cancelEdit();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Błąd zapisu');
+    } finally {
+      setIsEditSaving(false);
     }
   }
 
@@ -179,6 +264,13 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
+      {cropSrc && (
+        <ImageCropModal
+          imageSrc={cropSrc}
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      )}
       <Navbar />
 
       <main className="max-w-2xl mx-auto px-4 pt-10 pb-16 space-y-6">
@@ -194,21 +286,16 @@ export default function ProfilePage() {
                   {user.username[0].toUpperCase()}
                 </div>
               )}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                {isUploading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                  </svg>
-                )}
+              <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {isUploading
+                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                }
               </button>
             </div>
-            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50">
+            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+              className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50">
               {isUploading ? 'Przesyłanie...' : 'Zmień zdjęcie profilowe'}
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
@@ -230,19 +317,15 @@ export default function ProfilePage() {
           <form onSubmit={handleSaveBio} className="space-y-3">
             <div>
               <label className="text-xs text-[#8e8e8e] font-medium uppercase tracking-wide block mb-1">Bio</label>
-              <textarea
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                maxLength={150}
-                rows={3}
+              <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={150} rows={3}
                 placeholder="Napisz coś o sobie..."
-                className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]"
-              />
+                className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
               <p className="text-right text-xs text-[#8e8e8e] mt-1">{bio.length}/150</p>
             </div>
             {profileError && <p className="text-red-500 text-xs">{profileError}</p>}
             {saveMsg && <p className="text-green-600 text-xs font-semibold">{saveMsg}</p>}
-            <button type="submit" disabled={isSaving} className="w-full bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
+            <button type="submit" disabled={isSaving}
+              className="w-full bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
               {isSaving ? 'Zapisywanie...' : 'Zapisz profil'}
             </button>
           </form>
@@ -252,10 +335,8 @@ export default function ProfilePage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[#262626] font-semibold text-base">Moje posty <span className="text-[#8e8e8e] font-normal">({posts.length})</span></h2>
-            <button
-              onClick={() => { setShowPostForm((v) => !v); setPostError(''); }}
-              className="flex items-center gap-1.5 bg-[#0095f6] text-white text-sm font-semibold px-4 py-1.5 rounded-lg hover:bg-[#1877f2] transition-colors"
-            >
+            <button onClick={() => { setShowPostForm((v) => !v); setPostError(''); }}
+              className="flex items-center gap-1.5 bg-[#0095f6] text-white text-sm font-semibold px-4 py-1.5 rounded-lg hover:bg-[#1877f2] transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
@@ -267,26 +348,17 @@ export default function ProfilePage() {
           {showPostForm && (
             <div className="bg-white border border-[#dbdbdb] rounded-xl p-6 mb-4">
               <form onSubmit={handleCreatePost} className="space-y-4">
-                {/* Podgląd zdjęcia */}
                 {postImagePreview ? (
                   <div className="relative rounded-lg overflow-hidden">
                     <img src={postImagePreview} alt="Podgląd" className="w-full max-h-72 object-cover" />
-                    <button
-                      type="button"
-                      onClick={clearPostImage}
-                      className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                    <button type="button" onClick={clearPostImage}
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => postFileRef.current?.click()}
-                    className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-8 flex flex-col items-center gap-2 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors"
-                  >
+                  <button type="button" onClick={() => postFileRef.current?.click()}
+                    className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-8 flex flex-col items-center gap-2 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors">
                     <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 3.75h-9A2.25 2.25 0 005.25 6v8.25" />
                     </svg>
@@ -294,31 +366,17 @@ export default function ProfilePage() {
                   </button>
                 )}
                 <input ref={postFileRef} type="file" accept="image/*" className="hidden" onChange={handlePostImageSelect} />
-
-                <textarea
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  maxLength={2200}
-                  rows={3}
+                <textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={2200} rows={3}
                   placeholder="Co słychać?"
-                  className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]"
-                />
-
+                  className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
                 {postError && <p className="text-red-500 text-xs">{postError}</p>}
-
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowPostForm(false); setCaption(''); clearPostImage(); }}
-                    className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors"
-                  >
+                  <button type="button" onClick={() => { setShowPostForm(false); setCaption(''); clearPostImage(); }}
+                    className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors">
                     Anuluj
                   </button>
-                  <button
-                    type="submit"
-                    disabled={isPosting}
-                    className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors"
-                  >
+                  <button type="submit" disabled={isPosting}
+                    className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
                     {isPosting ? 'Dodawanie...' : 'Opublikuj'}
                   </button>
                 </div>
@@ -344,23 +402,89 @@ export default function ProfilePage() {
             <div className="space-y-4">
               {posts.map((post) => (
                 <div key={post._id} className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
-                  {post.imageUrl && (
-                    <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
+
+                  {editingId === post._id ? (
+                    /* Formularz edycji */
+                    <form onSubmit={(e) => handleSaveEdit(e, post._id)} className="p-5 space-y-3">
+                      <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide mb-1">Edytuj post</p>
+
+                      {/* Podgląd / zmiana zdjęcia */}
+                      {editImagePreview ? (
+                        <div className="relative rounded-lg overflow-hidden">
+                          <img src={editImagePreview} alt="Nowe zdjęcie" className="w-full max-h-64 object-cover" />
+                          <button type="button" onClick={() => { setEditImage(null); setEditImagePreview(null); if (editFileRef.current) editFileRef.current.value = ''; }}
+                            className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      ) : post.imageUrl && !editRemoveImage ? (
+                        <div className="relative rounded-lg overflow-hidden">
+                          <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-64 object-cover" />
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            <button type="button" onClick={() => editFileRef.current?.click()}
+                              className="px-2 py-1 bg-black/60 text-white text-xs rounded-lg hover:bg-black/80">
+                              Zmień
+                            </button>
+                            <button type="button" onClick={() => setEditRemoveImage(true)}
+                              className="px-2 py-1 bg-red-500/80 text-white text-xs rounded-lg hover:bg-red-600">
+                              Usuń
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => editFileRef.current?.click()}
+                          className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-6 flex flex-col items-center gap-1.5 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors text-sm">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008" />
+                          </svg>
+                          {editRemoveImage ? 'Dodaj nowe zdjęcie (opcjonalnie)' : 'Dodaj zdjęcie (opcjonalnie)'}
+                        </button>
+                      )}
+                      <input ref={editFileRef} type="file" accept="image/*" className="hidden" onChange={handleEditImageSelect} />
+
+                      <textarea value={editCaption} onChange={(e) => setEditCaption(e.target.value)} maxLength={2200} rows={3}
+                        placeholder="Treść posta..."
+                        className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
+
+                      {editError && <p className="text-red-500 text-xs">{editError}</p>}
+
+                      <div className="flex gap-2">
+                        <button type="button" onClick={cancelEdit}
+                          className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors">
+                          Anuluj
+                        </button>
+                        <button type="submit" disabled={isEditSaving}
+                          className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
+                          {isEditSaving ? 'Zapisywanie...' : 'Zapisz'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    /* Widok posta */
+                    <>
+                      {post.imageUrl && (
+                        <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
+                      )}
+                      <div className="px-5 py-4">
+                        {post.caption && (
+                          <p className="text-sm text-[#262626] whitespace-pre-wrap mb-3">{post.caption}</p>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-[#8e8e8e]">{formatDate(post.createdAt)}</span>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => startEdit(post)}
+                              className="text-xs text-[#0095f6] font-medium hover:text-[#00376b] transition-colors">
+                              Edytuj
+                            </button>
+                            <button onClick={() => handleDeletePost(post._id)}
+                              className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors">
+                              Usuń
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
-                  <div className="px-5 py-4">
-                    {post.caption && (
-                      <p className="text-sm text-[#262626] whitespace-pre-wrap mb-3">{post.caption}</p>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-[#8e8e8e]">{formatDate(post.createdAt)}</span>
-                      <button
-                        onClick={() => handleDeletePost(post._id)}
-                        className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
-                      >
-                        Usuń
-                      </button>
-                    </div>
-                  </div>
                 </div>
               ))}
             </div>
