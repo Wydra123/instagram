@@ -141,6 +141,18 @@ export default function ProfilePage() {
     setCropTarget(target);
   }
 
+  async function openCropperFromUrl(url: string, target: 'post' | 'edit') {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      setCropSrc(URL.createObjectURL(blob));
+      setCropTarget(target);
+    } catch {
+      // fallback: otwórz file picker
+      if (target === 'edit') editFileRef.current?.click();
+    }
+  }
+
   function handleCropConfirm(croppedFile: File) {
     if (cropTarget === 'post') {
       setPostImage(croppedFile);
@@ -418,14 +430,29 @@ export default function ProfilePage() {
                           </button>
                         </div>
                       ) : post.imageUrl && !editRemoveImage ? (
-                        <div className="relative rounded-lg overflow-hidden">
+                        <div className="relative rounded-lg overflow-hidden group/img">
                           <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-64 object-cover" />
-                          <div className="absolute top-2 right-2 flex gap-1">
-                            <button type="button" onClick={() => editFileRef.current?.click()}
+
+                          {/* klik na zdjęcie → cropper */}
+                          <button
+                            type="button"
+                            onClick={() => openCropperFromUrl(`${API_URL}${post.imageUrl}`, 'edit')}
+                            className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center"
+                          >
+                            <span className="opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/60 text-white rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-medium pointer-events-none">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              Kliknij aby przyciąć
+                            </span>
+                          </button>
+
+                          <div className="absolute top-2 right-2 flex gap-1 z-10">
+                            <button type="button" onClick={(e) => { e.stopPropagation(); editFileRef.current?.click(); }}
                               className="px-2 py-1 bg-black/60 text-white text-xs rounded-lg hover:bg-black/80">
                               Zmień
                             </button>
-                            <button type="button" onClick={() => setEditRemoveImage(true)}
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setEditRemoveImage(true); }}
                               className="px-2 py-1 bg-red-500/80 text-white text-xs rounded-lg hover:bg-red-600">
                               Usuń
                             </button>
