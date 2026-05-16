@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/auth';
 
 export const usersRouter = Router();
 
-const uploadsDir = path.join(__dirname, '..', 'uploads', 'avatars');
+const uploadsDir = path.join(process.cwd(), 'uploads', 'avatars');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const storage = multer.diskStorage({

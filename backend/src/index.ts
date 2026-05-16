@@ -19,7 +19,7 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/users', usersRouter);

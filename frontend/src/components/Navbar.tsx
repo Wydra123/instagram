@@ -32,10 +32,10 @@ export default function Navbar() {
               <img
                 src={avatarSrc}
                 alt={user?.username}
-                className="w-8 h-8 rounded-full object-cover border border-[#dbdbdb]"
+                className="w-10 h-10 rounded-full object-cover border border-[#dbdbdb]"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xs font-bold">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
                 {user?.username?.[0]?.toUpperCase()}
               </div>
             )}
