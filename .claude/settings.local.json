@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Test-Path \"c:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\\\\backend\\\\.env\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
