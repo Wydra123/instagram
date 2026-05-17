@@ -200,8 +200,7 @@ export default function ProfilePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       updateUser({ bio: data.bio });
-      setSaveMsg('Zapisano!');
-      setTimeout(() => setSaveMsg(''), 2500);
+      setIsEditingProfile(false);
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : 'Błąd zapisu');
     } finally {
