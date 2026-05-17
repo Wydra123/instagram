@@ -49,6 +49,7 @@ export default function FeedPage() {
   const [allStories, setAllStories] = useState<Story[]>([]);
   const [viewerStories, setViewerStories] = useState<Story[]>([]);
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  const [spinningId, setSpinningId] = useState<string | null>(null);
 
   const [suggested, setSuggested] = useState<SuggestedUser[]>([]);
   const [, setFollowingIds] = useState<Set<string>>(new Set());
@@ -143,6 +144,15 @@ export default function FeedPage() {
         )
       );
     } catch {}
+  }
+
+  function handleStoryClick(stories: Story[], authorId: string) {
+    if (spinningId) return;
+    setSpinningId(authorId);
+    setTimeout(() => {
+      setSpinningId(null);
+      openViewer(stories, 0);
+    }, 700);
   }
 
   async function handleFollow(targetId: string) {
@@ -304,15 +314,21 @@ export default function FeedPage() {
                     return (
                       <button
                         key={author._id}
-                        onClick={() => openViewer(stories, 0)}
+                        onClick={() => handleStoryClick(stories, author._id)}
                         className="flex flex-col items-center gap-1.5 flex-shrink-0 focus:outline-none"
+                        disabled={spinningId === author._id}
                       >
-                        <div className={`p-0.5 rounded-full ${anyViewed ? 'bg-[#dbdbdb]' : 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]'}`}>
-                          <div className="p-0.5 bg-white rounded-full">
+                        <div className="relative w-[92px] h-[92px] flex items-center justify-center">
+                          {/* Kręcący się gradient ring */}
+                          <div className={`absolute inset-0 rounded-full ${anyViewed ? 'bg-[#dbdbdb]' : 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]'} ${spinningId === author._id ? 'animate-spin' : ''}`} />
+                          {/* Biała przerwa */}
+                          <div className="absolute inset-[4px] rounded-full bg-white" />
+                          {/* Avatar — statyczny */}
+                          <div className="absolute inset-[6px] rounded-full overflow-hidden">
                             {avatarSrc ? (
-                              <img src={avatarSrc} alt={author.username} className="w-14 h-14 rounded-full object-cover" />
+                              <img src={avatarSrc} alt={author.username} className="w-full h-full object-cover" />
                             ) : (
-                              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xl font-bold">
+                              <div className="w-full h-full rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xl font-bold">
                                 {author.username[0].toUpperCase()}
                               </div>
                             )}
