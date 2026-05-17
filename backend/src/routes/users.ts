@@ -37,6 +37,22 @@ usersRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+usersRouter.get('/search', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const q = (req.query.q as string || '').trim();
+    if (!q) { res.json([]); return; }
+    const users = await User.find({
+      username: { $regex: q, $options: 'i' },
+      _id: { $ne: req.userId },
+    })
+      .select('-passwordHash -email')
+      .limit(20);
+    res.json(users);
+  } catch {
+    res.status(500).json({ message: 'Błąd serwera' });
+  }
+});
+
 usersRouter.get('/suggestions', requireAuth, async (req: Request, res: Response) => {
   try {
     const me = await User.findById(req.userId).select('following');
