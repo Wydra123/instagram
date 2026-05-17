@@ -107,6 +107,13 @@ export default function UserProfilePage() {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
+      setStories((prev) =>
+        prev.map((s) =>
+          s._id === story._id && !s.views.includes(user!.id)
+            ? { ...s, views: [...s.views, user!.id] }
+            : s
+        )
+      );
     } catch {}
   }
 
@@ -136,116 +143,102 @@ export default function UserProfilePage() {
     );
   }
 
+  const hasStories = stories.length > 0;
+  const anyViewed = stories.some((s) => s.views.includes(user.id));
+
+  const currentStory = viewingStoryIdx !== null ? stories[viewingStoryIdx] : null;
+
   return (
     <div
       className="min-h-screen [color-scheme:light] bg-cover bg-center bg-fixed"
       style={{ backgroundImage: "url('/feed-bg.png')" }}
     >
       {/* Story viewer modal */}
-      {viewingStoryIdx !== null && stories[viewingStoryIdx] && profile && (() => {
-        const story = stories[viewingStoryIdx];
-        const hasPrev = viewingStoryIdx > 0;
-        const hasNext = viewingStoryIdx < stories.length - 1;
-        const avatarSrc = profile.profilePicture ? resolveUrl(profile.profilePicture) : null;
-        return (
+      {viewingStoryIdx !== null && currentStory && profile && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setViewingStoryIdx(null)}
+        >
           <div
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-            onClick={() => setViewingStoryIdx(null)}
+            className="relative flex flex-col items-center max-w-sm w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="relative flex flex-col items-center max-w-sm w-full mx-4"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Progress bars */}
-              {stories.length > 1 && (
-                <div className="flex gap-1 w-full mb-2 px-1">
-                  {stories.map((_, i) => (
-                    <div key={i} className="flex-1 h-0.5 rounded-full overflow-hidden bg-white/30">
-                      <div className={`h-full bg-white transition-all ${i <= viewingStoryIdx ? 'w-full' : 'w-0'}`} />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Top bar */}
-              <div className="flex items-center justify-between w-full mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  {avatarSrc ? (
-                    <img src={avatarSrc} alt="" className="w-8 h-8 rounded-full object-cover border border-white/30" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
-                      {profile.username[0].toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-white text-sm font-semibold">{profile.username}</span>
-                  <span className="text-white/60 text-xs">{storyTimeLeft(story.createdAt)}</span>
-                </div>
-                <button
-                  onClick={() => setViewingStoryIdx(null)}
-                  className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+            {/* Progress bars */}
+            {stories.length > 1 && (
+              <div className="flex gap-1 w-full mb-2 px-1">
+                {stories.map((_, i) => (
+                  <div key={i} className="flex-1 h-0.5 rounded-full overflow-hidden bg-white/30">
+                    <div className={`h-full bg-white ${i <= viewingStoryIdx ? 'w-full' : 'w-0'}`} />
+                  </div>
+                ))}
               </div>
+            )}
 
-              {/* Image */}
-              <div className="relative w-full rounded-2xl overflow-hidden bg-black">
-                <img
-                  src={resolveUrl(story.image)}
-                  alt=""
-                  className="w-full object-contain max-h-[70vh]"
-                />
-
-                {/* Caption overlay */}
-                {story.caption && (
-                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-4">
-                    <p className="text-white text-sm leading-snug">{story.caption}</p>
+            {/* Top bar */}
+            <div className="flex items-center justify-between w-full mb-3 px-1">
+              <div className="flex items-center gap-2">
+                {profile.profilePicture ? (
+                  <img src={resolveUrl(profile.profilePicture)} alt="" className="w-8 h-8 rounded-full object-cover border border-white/30" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
+                    {profile.username[0].toUpperCase()}
                   </div>
                 )}
-
-                {/* Left nav */}
-                {hasPrev && (
-                  <button
-                    onClick={() => openStory(viewingStoryIdx - 1)}
-                    className="absolute left-0 inset-y-0 w-1/4 flex items-center justify-start pl-2 group"
-                    aria-label="Poprzednie"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                      </svg>
-                    </div>
-                  </button>
-                )}
-
-                {/* Right nav */}
-                {hasNext && (
-                  <button
-                    onClick={() => openStory(viewingStoryIdx + 1)}
-                    className="absolute right-0 inset-y-0 w-1/4 flex items-center justify-end pr-2 group"
-                    aria-label="Następne"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                      </svg>
-                    </div>
-                  </button>
-                )}
+                <span className="text-white text-sm font-semibold">{profile.username}</span>
+                <span className="text-white/60 text-xs">{storyTimeLeft(currentStory.createdAt)}</span>
               </div>
+              <button
+                onClick={() => setViewingStoryIdx(null)}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-              {/* Bottom info */}
-              {stories.length > 1 && (
-                <div className="w-full mt-3 px-1 flex justify-end">
-                  <span className="text-white/40 text-xs">{viewingStoryIdx + 1} / {stories.length}</span>
+            {/* Image */}
+            <div className="relative w-full rounded-2xl overflow-hidden bg-black">
+              <img src={resolveUrl(currentStory.image)} alt="" className="w-full object-contain max-h-[70vh]" />
+              {currentStory.caption && (
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-4">
+                  <p className="text-white text-sm leading-snug">{currentStory.caption}</p>
                 </div>
               )}
+              {viewingStoryIdx > 0 && (
+                <button
+                  onClick={() => openStory(viewingStoryIdx - 1)}
+                  className="absolute left-0 inset-y-0 w-1/4 flex items-center justify-start pl-2 group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    </svg>
+                  </div>
+                </button>
+              )}
+              {viewingStoryIdx < stories.length - 1 && (
+                <button
+                  onClick={() => openStory(viewingStoryIdx + 1)}
+                  className="absolute right-0 inset-y-0 w-1/4 flex items-center justify-end pr-2 group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
+                  </div>
+                </button>
+              )}
             </div>
+
+            {stories.length > 1 && (
+              <div className="w-full mt-3 px-1 flex justify-end">
+                <span className="text-white/40 text-xs">{viewingStoryIdx + 1} / {stories.length}</span>
+              </div>
+            )}
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       <Navbar />
       <main className="max-w-lg mx-auto px-4 pt-8 pb-16">
@@ -263,18 +256,43 @@ export default function UserProfilePage() {
             {/* Karta profilu */}
             <div className="bg-white border border-[#dbdbdb] rounded-xl p-8 mb-6">
               <div className="flex items-center gap-8">
-                {/* Avatar */}
+                {/* Avatar z kółkiem story */}
                 <div className="flex-shrink-0">
-                  {profile.profilePicture ? (
-                    <img
-                      src={resolveUrl(profile.profilePicture)}
-                      alt={profile.username}
-                      className="w-24 h-24 rounded-full object-cover border-2 border-[#dbdbdb]"
-                    />
+                  {hasStories ? (
+                    <button
+                      onClick={() => openStory(0)}
+                      className="focus:outline-none"
+                    >
+                      <div className={`p-0.5 rounded-full ${anyViewed ? 'bg-[#dbdbdb]' : 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]'}`}>
+                        <div className="p-0.5 bg-white rounded-full">
+                          {profile.profilePicture ? (
+                            <img
+                              src={resolveUrl(profile.profilePicture)}
+                              alt={profile.username}
+                              className="w-24 h-24 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-3xl font-bold">
+                              {profile.username[0].toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
                   ) : (
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-3xl font-bold border-2 border-[#dbdbdb]">
-                      {profile.username[0].toUpperCase()}
-                    </div>
+                    <>
+                      {profile.profilePicture ? (
+                        <img
+                          src={resolveUrl(profile.profilePicture)}
+                          alt={profile.username}
+                          className="w-24 h-24 rounded-full object-cover border-2 border-[#dbdbdb]"
+                        />
+                      ) : (
+                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-3xl font-bold border-2 border-[#dbdbdb]">
+                          {profile.username[0].toUpperCase()}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -318,35 +336,6 @@ export default function UserProfilePage() {
                 </div>
               </div>
             </div>
-
-            {/* Stories */}
-            {stories.length > 0 && (
-              <div className="bg-white border border-[#dbdbdb] rounded-xl p-5 mb-6">
-                <h2 className="text-[#262626] font-semibold text-sm mb-1">
-                  Stories <span className="text-[#8e8e8e] font-normal">({stories.length})</span>
-                </h2>
-                <div className="flex flex-wrap gap-x-5 gap-y-7 pt-3 pl-3 pb-7">
-                  {stories.map((story, idx) => (
-                    <div key={story._id} className="relative">
-                      <button
-                        onClick={() => openStory(idx)}
-                        className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#0095f6] ring-offset-2 block focus:outline-none cursor-pointer"
-                      >
-                        <img src={resolveUrl(story.image)} alt="" className="w-full h-full object-cover" />
-                      </button>
-                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full pointer-events-none">
-                        {storyTimeLeft(story.createdAt)}
-                      </span>
-                      {story.caption && (
-                        <p className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-[#8e8e8e] whitespace-nowrap max-w-[80px] truncate">
-                          {story.caption}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Posty */}
             {posts.length === 0 ? (
