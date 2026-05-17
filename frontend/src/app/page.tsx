@@ -21,13 +21,13 @@ export default function FeedPage() {
     try {
       const res = await fetch(`${API_URL}/api/posts`);
       const data = await res.json();
-      setPosts(Array.isArray(data) ? data : []);
+      setPosts(Array.isArray(data) ? data.filter((p: Post) => p.author._id !== user!.id) : []);
     } catch {
       setPosts([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (user) fetchPosts();
