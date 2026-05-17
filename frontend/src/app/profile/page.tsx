@@ -70,6 +70,9 @@ export default function ProfilePage() {
   const [storyError, setStoryError] = useState('');
   const storyFileRef = useRef<HTMLInputElement>(null);
 
+  // story viewer
+  const [viewingStoryIdx, setViewingStoryIdx] = useState<number | null>(null);
+
   // edycja posta
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCaption, setEditCaption] = useState('');
@@ -136,6 +139,17 @@ export default function ProfilePage() {
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
   useEffect(() => { fetchStories(); }, [fetchStories]);
+
+  useEffect(() => {
+    if (viewingStoryIdx === null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setViewingStoryIdx(null);
+      if (e.key === 'ArrowRight') setViewingStoryIdx((i) => i !== null && i < stories.length - 1 ? i + 1 : i);
+      if (e.key === 'ArrowLeft') setViewingStoryIdx((i) => i !== null && i > 0 ? i - 1 : i);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewingStoryIdx, stories.length]);
 
   if (isLoading || !user) {
     return (
@@ -419,6 +433,119 @@ export default function ProfilePage() {
           onCancel={handleCropCancel}
         />
       )}
+
+      {/* Story viewer modal */}
+      {viewingStoryIdx !== null && stories[viewingStoryIdx] && (() => {
+        const story = stories[viewingStoryIdx];
+        const hasPrev = viewingStoryIdx > 0;
+        const hasNext = viewingStoryIdx < stories.length - 1;
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            onClick={() => setViewingStoryIdx(null)}
+          >
+            <div
+              className="relative flex flex-col items-center max-w-sm w-full mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Progress bars */}
+              {stories.length > 1 && (
+                <div className="flex gap-1 w-full mb-2 px-1">
+                  {stories.map((_, i) => (
+                    <div key={i} className="flex-1 h-0.5 rounded-full overflow-hidden bg-white/30">
+                      <div className={`h-full bg-white transition-all ${i <= viewingStoryIdx ? 'w-full' : 'w-0'}`} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Top bar */}
+              <div className="flex items-center justify-between w-full mb-3 px-1">
+                <div className="flex items-center gap-2">
+                  {user.profilePicture ? (
+                    <img src={`${API_URL}${user.profilePicture}`} alt="" className="w-8 h-8 rounded-full object-cover border border-white/30" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
+                      {user.username[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-white text-sm font-semibold">{user.username}</span>
+                  <span className="text-white/60 text-xs">{storyTimeLeft(story.createdAt)}</span>
+                </div>
+                <button
+                  onClick={() => setViewingStoryIdx(null)}
+                  className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Image */}
+              <div className="relative w-full rounded-2xl overflow-hidden bg-black">
+                <img
+                  src={resolveUrl(story.image)}
+                  alt=""
+                  className="w-full object-contain max-h-[70vh]"
+                />
+
+                {/* Caption overlay */}
+                {story.caption && (
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-4">
+                    <p className="text-white text-sm leading-snug">{story.caption}</p>
+                  </div>
+                )}
+
+                {/* Left nav zone */}
+                {hasPrev && (
+                  <button
+                    onClick={() => setViewingStoryIdx(viewingStoryIdx - 1)}
+                    className="absolute left-0 inset-y-0 w-1/4 flex items-center justify-start pl-2 group"
+                    aria-label="Poprzednie"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                      </svg>
+                    </div>
+                  </button>
+                )}
+
+                {/* Right nav zone */}
+                {hasNext && (
+                  <button
+                    onClick={() => setViewingStoryIdx(viewingStoryIdx + 1)}
+                    className="absolute right-0 inset-y-0 w-1/4 flex items-center justify-end pr-2 group"
+                    aria-label="Następne"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                      </svg>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              {/* Bottom info */}
+              <div className="flex items-center justify-between w-full mt-3 px-1">
+                <div className="flex items-center gap-1 text-white/60 text-xs">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {story.views.length} wyświetleń
+                </div>
+                {stories.length > 1 && (
+                  <span className="text-white/40 text-xs">{viewingStoryIdx + 1} / {stories.length}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <Navbar />
 
       <main className="max-w-2xl mx-auto px-4 pt-10 pb-16 space-y-6">
@@ -630,18 +757,21 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="flex gap-3 overflow-x-auto pb-2">
-              {stories.map((story) => (
+              {stories.map((story, idx) => (
                 <div key={story._id} className="flex-shrink-0 group/story relative">
-                  <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#0095f6] ring-offset-2">
+                  <button
+                    onClick={() => setViewingStoryIdx(idx)}
+                    className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#0095f6] ring-offset-2 block focus:outline-none cursor-pointer"
+                  >
                     <img src={resolveUrl(story.image)} alt="" className="w-full h-full object-cover" />
-                  </div>
+                  </button>
                   {/* czas pozostały */}
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full">
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full pointer-events-none">
                     {storyTimeLeft(story.createdAt)}
                   </span>
                   {/* usuń */}
                   <button
-                    onClick={() => handleDeleteStory(story._id)}
+                    onClick={(e) => { e.stopPropagation(); handleDeleteStory(story._id); }}
                     className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/story:opacity-100 transition-opacity shadow"
                     title="Usuń story"
                   >
