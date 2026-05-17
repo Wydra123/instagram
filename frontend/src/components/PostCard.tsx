@@ -12,6 +12,7 @@ export interface PostComment {
 
 export interface Post {
   _id: string;
+  author: { _id: string; username: string; profilePicture?: string };
   caption: string;
   imageUrl?: string;
   createdAt: string;
@@ -92,11 +93,28 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
       ? `${API_URL}${user.profilePicture}`
       : null;
 
+  const isOwn = post.author._id === currentUserId;
+  const authorAvatar = post.author.profilePicture
+    ? (post.author.profilePicture.startsWith('http') ? post.author.profilePicture : `${API_URL}${post.author.profilePicture}`)
+    : null;
+
   return (
     <div className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
+      {/* Nagłówek autora */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        {authorAvatar ? (
+          <img src={authorAvatar} alt={post.author.username} className="w-9 h-9 rounded-full object-cover shrink-0" />
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold shrink-0">
+            {post.author.username[0].toUpperCase()}
+          </div>
+        )}
+        <span className="text-sm font-semibold text-[#262626]">{post.author.username}</span>
+      </div>
+
       {/* Zdjęcie */}
       {post.imageUrl && (
-        <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
+        <img src={post.imageUrl.startsWith('http') ? post.imageUrl : `${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
       )}
 
       {/* Akcje: like + komentarz */}
@@ -148,7 +166,7 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
             <p className="text-xs text-[#8e8e8e]">Brak komentarzy. Bądź pierwszy!</p>
           ) : (
             post.comments.map((c) => {
-              const canDelete = c.user._id === currentUserId;
+              const canDelete = c.user._id === currentUserId || isOwn;
               const src = avatarFor(c.user);
               return (
                 <div key={c._id} className="flex items-start gap-2.5 group/comment">
@@ -205,21 +223,23 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
         )}
       </form>
 
-      {/* Edytuj / Usuń */}
-      <div className="flex items-center justify-end gap-3 px-5 pb-3">
-        <button
-          onClick={() => onEdit(post)}
-          className="text-xs text-[#0095f6] font-medium hover:text-[#00376b] transition-colors"
-        >
-          Edytuj
-        </button>
-        <button
-          onClick={() => onDelete(post._id)}
-          className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
-        >
-          Usuń
-        </button>
-      </div>
+      {/* Edytuj / Usuń — tylko właściciel */}
+      {isOwn && (
+        <div className="flex items-center justify-end gap-3 px-5 pb-3">
+          <button
+            onClick={() => onEdit(post)}
+            className="text-xs text-[#0095f6] font-medium hover:text-[#00376b] transition-colors"
+          >
+            Edytuj
+          </button>
+          <button
+            onClick={() => onDelete(post._id)}
+            className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
+          >
+            Usuń
+          </button>
+        </div>
+      )}
     </div>
   );
 }
