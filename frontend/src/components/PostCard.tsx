@@ -15,7 +15,7 @@ export interface Post {
   _id: string;
   author: { _id: string; username: string; profilePicture?: string };
   caption: string;
-  imageUrl?: string;
+  images: string[];
   createdAt: string;
   likes: string[];
   comments: PostComment[];
@@ -30,14 +30,25 @@ interface Props {
   onUpdate: (updated: Post) => void;
 }
 
+function resolveUrl(url: string) {
+  return url.startsWith('http') ? url : `${API_URL}${url}`;
+}
+
 export default function PostCard({ post, currentUserId, token, onEdit, onDelete, onUpdate }: Props) {
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isLiking, setIsLiking] = useState(false);
   const [isCommenting, setIsCommenting] = useState(false);
+  const [imgIdx, setImgIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const liked = post.likes.includes(currentUserId);
+  const isOwn = post.author._id === currentUserId;
+  const images = post.images ?? [];
+
+  const authorAvatar = post.author.profilePicture
+    ? resolveUrl(post.author.profilePicture)
+    : null;
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -90,14 +101,7 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
   }
 
   const avatarFor = (user: PostComment['user']) =>
-    user.profilePicture
-      ? `${API_URL}${user.profilePicture}`
-      : null;
-
-  const isOwn = post.author._id === currentUserId;
-  const authorAvatar = post.author.profilePicture
-    ? (post.author.profilePicture.startsWith('http') ? post.author.profilePicture : `${API_URL}${post.author.profilePicture}`)
-    : null;
+    user.profilePicture ? resolveUrl(user.profilePicture) : null;
 
   return (
     <div className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
@@ -113,9 +117,51 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
         <span className="text-sm font-semibold text-[#262626]">{post.author.username}</span>
       </Link>
 
-      {/* Zdjęcie */}
-      {post.imageUrl && (
-        <img src={post.imageUrl.startsWith('http') ? post.imageUrl : `${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
+      {/* Karuzela zdjęć */}
+      {images.length > 0 && (
+        <div className="relative bg-black select-none">
+          <img
+            src={resolveUrl(images[imgIdx])}
+            alt=""
+            className="w-full max-h-96 object-contain"
+          />
+          {images.length > 1 && (
+            <>
+              {imgIdx > 0 && (
+                <button
+                  onClick={() => setImgIdx((i) => i - 1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+                  aria-label="Poprzednie"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                  </svg>
+                </button>
+              )}
+              {imgIdx < images.length - 1 && (
+                <button
+                  onClick={() => setImgIdx((i) => i + 1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+                  aria-label="Następne"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              )}
+              {/* Dots */}
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {images.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setImgIdx(i)}
+                    className={`w-1.5 h-1.5 rounded-full transition-colors ${i === imgIdx ? 'bg-white' : 'bg-white/50'}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* Akcje: like + komentarz */}
