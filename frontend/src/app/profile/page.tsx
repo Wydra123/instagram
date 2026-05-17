@@ -5,14 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth, API_URL } from '@/context/AuthContext';
 import Navbar from '@/components/Navbar';
 import ImageCropModal from '@/components/ImageCropModal';
-
-interface Post {
-  _id: string;
-  caption: string;
-  imageUrl?: string;
-  createdAt: string;
-  likes: string[];
-}
+import PostCard, { Post } from '@/components/PostCard';
 
 export default function ProfilePage() {
   const { user, token, isLoading, updateUser } = useAuth();
@@ -270,10 +263,6 @@ export default function ProfilePage() {
     setPosts((prev) => prev.filter((p) => p._id !== id));
   }
 
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
-  }
-
   return (
     <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
       {cropSrc && (
@@ -413,104 +402,78 @@ export default function ProfilePage() {
           ) : (
             <div className="space-y-4">
               {posts.map((post) => (
-                <div key={post._id} className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
-
+                <div key={post._id}>
                   {editingId === post._id ? (
                     /* Formularz edycji */
-                    <form onSubmit={(e) => handleSaveEdit(e, post._id)} className="p-5 space-y-3">
-                      <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide mb-1">Edytuj post</p>
+                    <div className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
+                      <form onSubmit={(e) => handleSaveEdit(e, post._id)} className="p-5 space-y-3">
+                        <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide mb-1">Edytuj post</p>
 
-                      {/* Podgląd / zmiana zdjęcia */}
-                      {editImagePreview ? (
-                        <div className="relative rounded-lg overflow-hidden">
-                          <img src={editImagePreview} alt="Nowe zdjęcie" className="w-full max-h-64 object-cover" />
-                          <button type="button" onClick={() => { setEditImage(null); setEditImagePreview(null); if (editFileRef.current) editFileRef.current.value = ''; }}
-                            className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                          </button>
-                        </div>
-                      ) : post.imageUrl && !editRemoveImage ? (
-                        <div className="relative rounded-lg overflow-hidden group/img">
-                          <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-64 object-cover" />
-
-                          {/* klik na zdjęcie → cropper */}
-                          <button
-                            type="button"
-                            onClick={() => openCropperFromUrl(`${API_URL}${post.imageUrl}`, 'edit')}
-                            className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center"
-                          >
-                            <span className="opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/60 text-white rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-medium pointer-events-none">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              Kliknij aby przyciąć
-                            </span>
-                          </button>
-
-                          <div className="absolute top-2 right-2 flex gap-1 z-10">
-                            <button type="button" onClick={(e) => { e.stopPropagation(); editFileRef.current?.click(); }}
-                              className="px-2 py-1 bg-black/60 text-white text-xs rounded-lg hover:bg-black/80">
-                              Zmień
-                            </button>
-                            <button type="button" onClick={(e) => { e.stopPropagation(); setEditRemoveImage(true); }}
-                              className="px-2 py-1 bg-red-500/80 text-white text-xs rounded-lg hover:bg-red-600">
-                              Usuń
+                        {editImagePreview ? (
+                          <div className="relative rounded-lg overflow-hidden">
+                            <img src={editImagePreview} alt="Nowe zdjęcie" className="w-full max-h-64 object-cover" />
+                            <button type="button" onClick={() => { setEditImage(null); setEditImagePreview(null); if (editFileRef.current) editFileRef.current.value = ''; }}
+                              className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                           </div>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => editFileRef.current?.click()}
-                          className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-6 flex flex-col items-center gap-1.5 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors text-sm">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008" />
-                          </svg>
-                          {editRemoveImage ? 'Dodaj nowe zdjęcie (opcjonalnie)' : 'Dodaj zdjęcie (opcjonalnie)'}
-                        </button>
-                      )}
-                      <input ref={editFileRef} type="file" accept="image/*" className="hidden" onChange={handleEditImageSelect} />
-
-                      <textarea value={editCaption} onChange={(e) => setEditCaption(e.target.value)} maxLength={2200} rows={3}
-                        placeholder="Treść posta..."
-                        className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
-
-                      {editError && <p className="text-red-500 text-xs">{editError}</p>}
-
-                      <div className="flex gap-2">
-                        <button type="button" onClick={cancelEdit}
-                          className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors">
-                          Anuluj
-                        </button>
-                        <button type="submit" disabled={isEditSaving}
-                          className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
-                          {isEditSaving ? 'Zapisywanie...' : 'Zapisz'}
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    /* Widok posta */
-                    <>
-                      {post.imageUrl && (
-                        <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-96 object-cover" />
-                      )}
-                      <div className="px-5 py-4">
-                        {post.caption && (
-                          <p className="text-sm text-[#262626] whitespace-pre-wrap mb-3">{post.caption}</p>
+                        ) : post.imageUrl && !editRemoveImage ? (
+                          <div className="relative rounded-lg overflow-hidden group/img">
+                            <img src={`${API_URL}${post.imageUrl}`} alt="" className="w-full max-h-64 object-cover" />
+                            <button type="button" onClick={() => openCropperFromUrl(`${API_URL}${post.imageUrl}`, 'edit')}
+                              className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center">
+                              <span className="opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/60 text-white rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-medium pointer-events-none">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Kliknij aby przyciąć
+                              </span>
+                            </button>
+                            <div className="absolute top-2 right-2 flex gap-1 z-10">
+                              <button type="button" onClick={(e) => { e.stopPropagation(); editFileRef.current?.click(); }}
+                                className="px-2 py-1 bg-black/60 text-white text-xs rounded-lg hover:bg-black/80">Zmień</button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); setEditRemoveImage(true); }}
+                                className="px-2 py-1 bg-red-500/80 text-white text-xs rounded-lg hover:bg-red-600">Usuń</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => editFileRef.current?.click()}
+                            className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-6 flex flex-col items-center gap-1.5 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors text-sm">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008" />
+                            </svg>
+                            {editRemoveImage ? 'Dodaj nowe zdjęcie (opcjonalnie)' : 'Dodaj zdjęcie (opcjonalnie)'}
+                          </button>
                         )}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-[#8e8e8e]">{formatDate(post.createdAt)}</span>
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => startEdit(post)}
-                              className="text-xs text-[#0095f6] font-medium hover:text-[#00376b] transition-colors">
-                              Edytuj
-                            </button>
-                            <button onClick={() => handleDeletePost(post._id)}
-                              className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors">
-                              Usuń
-                            </button>
-                          </div>
+                        <input ref={editFileRef} type="file" accept="image/*" className="hidden" onChange={handleEditImageSelect} />
+
+                        <textarea value={editCaption} onChange={(e) => setEditCaption(e.target.value)} maxLength={2200} rows={3}
+                          placeholder="Treść posta..."
+                          className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
+
+                        {editError && <p className="text-red-500 text-xs">{editError}</p>}
+
+                        <div className="flex gap-2">
+                          <button type="button" onClick={cancelEdit}
+                            className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors">
+                            Anuluj
+                          </button>
+                          <button type="submit" disabled={isEditSaving}
+                            className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
+                            {isEditSaving ? 'Zapisywanie...' : 'Zapisz'}
+                          </button>
                         </div>
-                      </div>
-                    </>
+                      </form>
+                    </div>
+                  ) : (
+                    <PostCard
+                      post={post}
+                      currentUserId={user.id}
+                      token={token!}
+                      onEdit={startEdit}
+                      onDelete={handleDeletePost}
+                      onUpdate={(updated) => setPosts((prev) => prev.map((p) => p._id === updated._id ? updated : p))}
+                    />
                   )}
                 </div>
               ))}

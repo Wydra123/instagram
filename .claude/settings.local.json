@@ -22,7 +22,14 @@
       "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\\\\backend\\\\src\" -Recurse | ForEach-Object { $_.FullName.Replace\\('c:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\\\\backend\\\\src\\\\', ''\\) })",
       "Bash(curl -s http://localhost:4000/health)",
       "Bash(cd \"c:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\\\\backend\" && npm run dev > /tmp/backend.log 2>&1 & *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(npx ts-node *)",
+      "Bash(curl -s http://localhost:4000/api/posts)",
+      "Bash(curl -s http://localhost:8080)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080)",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"stalkerpl000@gmail.com\\\\\",\\\\\"password\\\\\":\\\\\"test\\\\\"}\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"alice@example.com\\\\\",\\\\\"password\\\\\":\\\\\"password123\\\\\"}\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Desktop-instagram\\memory"
