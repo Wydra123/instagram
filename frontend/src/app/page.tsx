@@ -51,7 +51,7 @@ export default function FeedPage() {
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
 
   const [suggested, setSuggested] = useState<SuggestedUser[]>([]);
-  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [, setFollowingIds] = useState<Set<string>>(new Set());
   const [followLoading, setFollowLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -250,49 +250,49 @@ export default function FeedPage() {
 
       <Navbar />
 
-      <div className="max-w-4xl mx-auto px-4 pt-6 pb-16">
-        <div className="flex gap-8 items-start">
+      {/* Sidebar — fixed po lewej */}
+      {suggested.length > 0 && (
+        <aside
+          className="hidden lg:flex fixed top-24 z-10 justify-center items-start"
+          style={{ left: 0, width: 'calc(50vw - 16rem)' }}
+        >
+          <div>
+          <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide mb-3">Sugestie dla Ciebie</p>
+          <ul className="space-y-3">
+            {suggested.map((u) => {
+              const avatar = u.profilePicture ? resolveUrl(u.profilePicture) : null;
+              return (
+                <li key={u._id} className="flex items-center gap-3">
+                  <Link href={`/user/${u.username}`} className="flex-shrink-0">
+                    {avatar ? (
+                      <img src={avatar} alt={u.username} className="w-9 h-9 rounded-full object-cover border border-[#dbdbdb]" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
+                        {u.username[0].toUpperCase()}
+                      </div>
+                    )}
+                  </Link>
+                  <Link href={`/user/${u.username}`} className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-[#262626] truncate">{u.username}</p>
+                    {u.bio && <p className="text-xs text-[#8e8e8e] truncate">{u.bio}</p>}
+                  </Link>
+                  <button
+                    onClick={() => handleFollow(u._id)}
+                    disabled={followLoading === u._id}
+                    className="text-xs font-semibold text-[#0095f6] hover:text-[#00376b] disabled:opacity-50 flex-shrink-0 transition-colors"
+                  >
+                    {followLoading === u._id ? '...' : 'Obserwuj'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          </div>
+        </aside>
+      )}
 
-          {/* Lewy sidebar — sugestie */}
-          {suggested.length > 0 && (
-            <aside className="hidden lg:block w-64 flex-shrink-0 sticky top-6">
-              <div className="bg-white/80 backdrop-blur-sm border border-[#dbdbdb] rounded-xl p-4">
-                <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide mb-3">Sugestie dla Ciebie</p>
-                <ul className="space-y-3">
-                  {suggested.map((u) => {
-                    const avatar = u.profilePicture ? resolveUrl(u.profilePicture) : null;
-                    return (
-                      <li key={u._id} className="flex items-center gap-3">
-                        <Link href={`/user/${u.username}`} className="flex-shrink-0">
-                          {avatar ? (
-                            <img src={avatar} alt={u.username} className="w-9 h-9 rounded-full object-cover border border-[#dbdbdb]" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
-                              {u.username[0].toUpperCase()}
-                            </div>
-                          )}
-                        </Link>
-                        <Link href={`/user/${u.username}`} className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#262626] truncate">{u.username}</p>
-                          {u.bio && <p className="text-xs text-[#8e8e8e] truncate">{u.bio}</p>}
-                        </Link>
-                        <button
-                          onClick={() => handleFollow(u._id)}
-                          disabled={followLoading === u._id}
-                          className="text-xs font-semibold text-[#0095f6] hover:text-[#00376b] disabled:opacity-50 flex-shrink-0 transition-colors"
-                        >
-                          {followLoading === u._id ? '...' : 'Obserwuj'}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </aside>
-          )}
-
-          {/* Główna kolumna */}
-          <div className="flex-1 min-w-0 space-y-5">
+      <div className="max-w-lg mx-auto px-4 pt-6 pb-16">
+        <div className="space-y-5">
 
             {/* Stories bar */}
             {grouped.length > 0 && (
@@ -349,10 +349,9 @@ export default function FeedPage() {
                 />
               ))
             )}
-          </div>
-
         </div>
       </div>
     </div>
   );
 }
+
