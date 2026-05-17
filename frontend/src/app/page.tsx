@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, API_URL } from '@/context/AuthContext';
@@ -49,7 +49,12 @@ export default function FeedPage() {
   const [allStories, setAllStories] = useState<Story[]>([]);
   const [viewerStories, setViewerStories] = useState<Story[]>([]);
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  const [viewerGroupIdx, setViewerGroupIdx] = useState<number | null>(null);
   const [spinningId, setSpinningId] = useState<string | null>(null);
+  const [storyProgress, setStoryProgress] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const advanceRef = useRef<() => void>(() => {});
 
   const [suggested, setSuggested] = useState<SuggestedUser[]>([]);
   const [, setFollowingIds] = useState<Set<string>>(new Set());
@@ -119,17 +124,60 @@ export default function FeedPage() {
   useEffect(() => {
     if (viewerIdx === null) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setViewerIdx(null);
-      if (e.key === 'ArrowRight') setViewerIdx((i) => i !== null && i < viewerStories.length - 1 ? i + 1 : i);
+      if (e.key === 'Escape') { setViewerIdx(null); setViewerGroupIdx(null); }
+      if (e.key === 'ArrowRight') advanceRef.current();
       if (e.key === 'ArrowLeft') setViewerIdx((i) => i !== null && i > 0 ? i - 1 : i);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [viewerIdx, viewerStories.length]);
 
-  async function openViewer(stories: Story[], idx: number) {
+  // Aktualizuj advanceRef przy każdym renderze żeby uniknąć stale closure
+  advanceRef.current = () => {
+    if (viewerIdx === null) return;
+    if (viewerIdx < viewerStories.length - 1) {
+      openViewer(viewerStories, viewerIdx + 1, viewerGroupIdx ?? undefined);
+    } else if (viewerGroupIdx !== null && viewerGroupIdx < grouped.length - 1) {
+      goToGroup(viewerGroupIdx + 1);
+    } else {
+      setViewerIdx(null);
+      setViewerGroupIdx(null);
+    }
+  };
+
+  // Timer 10s na story
+  useEffect(() => {
+    if (viewerIdx === null) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+    setStoryProgress(0);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    const start = Date.now();
+    const DURATION = 6000;
+
+    intervalRef.current = setInterval(() => {
+      setStoryProgress(Math.min(100, ((Date.now() - start) / DURATION) * 100));
+    }, 50);
+
+    timerRef.current = setTimeout(() => {
+      clearInterval(intervalRef.current!);
+      advanceRef.current();
+    }, DURATION);
+
+    return () => {
+      clearTimeout(timerRef.current!);
+      clearInterval(intervalRef.current!);
+    };
+  }, [viewerIdx, viewerGroupIdx]);
+
+  async function openViewer(stories: Story[], idx: number, groupIdx?: number) {
     setViewerStories(stories);
     setViewerIdx(idx);
+    if (groupIdx !== undefined) setViewerGroupIdx(groupIdx);
     if (!token) return;
     try {
       await fetch(`${API_URL}/api/stories/${stories[idx]._id}/view`, {
@@ -146,12 +194,18 @@ export default function FeedPage() {
     } catch {}
   }
 
-  function handleStoryClick(stories: Story[], authorId: string) {
+  function goToGroup(groupIdx: number) {
+    const group = grouped[groupIdx];
+    if (!group) return;
+    openViewer(group.stories, 0, groupIdx);
+  }
+
+  function handleStoryClick(stories: Story[], authorId: string, groupIdx: number) {
     if (spinningId) return;
     setSpinningId(authorId);
     setTimeout(() => {
       setSpinningId(null);
-      openViewer(stories, 0);
+      openViewer(stories, 0, groupIdx);
     }, 700);
   }
 
@@ -196,19 +250,78 @@ export default function FeedPage() {
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
           onClick={() => setViewerIdx(null)}
         >
+          {/* Strzałka poprzedni użytkownik */}
+          {viewerGroupIdx !== null && viewerGroupIdx > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); goToGroup(viewerGroupIdx - 1); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </div>
+              {(() => {
+                const prev = grouped[viewerGroupIdx - 1];
+                const prevAvatar = prev.author.profilePicture ? resolveUrl(prev.author.profilePicture) : null;
+                return (
+                  <div className="flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {prevAvatar
+                      ? <img src={prevAvatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/30" />
+                      : <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xs font-bold">{prev.author.username[0].toUpperCase()}</div>
+                    }
+                    <span className="text-white text-[10px] font-medium">{prev.author.username}</span>
+                  </div>
+                );
+              })()}
+            </button>
+          )}
+
+          {/* Strzałka następny użytkownik */}
+          {viewerGroupIdx !== null && viewerGroupIdx < grouped.length - 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); goToGroup(viewerGroupIdx + 1); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </div>
+              {(() => {
+                const next = grouped[viewerGroupIdx + 1];
+                const nextAvatar = next.author.profilePicture ? resolveUrl(next.author.profilePicture) : null;
+                return (
+                  <div className="flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {nextAvatar
+                      ? <img src={nextAvatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/30" />
+                      : <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xs font-bold">{next.author.username[0].toUpperCase()}</div>
+                    }
+                    <span className="text-white text-[10px] font-medium">{next.author.username}</span>
+                  </div>
+                );
+              })()}
+            </button>
+          )}
+
           <div
             className="relative flex flex-col items-center max-w-sm w-full mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            {viewerStories.length > 1 && (
-              <div className="flex gap-1 w-full mb-2 px-1">
-                {viewerStories.map((_, i) => (
-                  <div key={i} className="flex-1 h-0.5 rounded-full overflow-hidden bg-white/30">
-                    <div className={`h-full bg-white ${i <= viewerIdx ? 'w-full' : 'w-0'}`} />
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="flex gap-1 w-full mb-2 px-1">
+              {viewerStories.map((_, i) => (
+                <div key={i} className="flex-1 h-0.5 rounded-full overflow-hidden bg-white/30">
+                  <div
+                    className="h-full bg-white"
+                    style={{
+                      width: i < viewerIdx! ? '100%'
+                        : i === viewerIdx ? `${storyProgress}%`
+                        : '0%',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
             <div className="flex items-center justify-between w-full mb-3 px-1">
               <div className="flex items-center gap-2">
                 {currentStory.author.profilePicture ? (
@@ -308,13 +421,13 @@ export default function FeedPage() {
             {grouped.length > 0 && (
               <div className="px-4 py-3">
                 <div className="flex gap-4 overflow-x-auto pb-1 scrollbar-none">
-                  {grouped.map(({ author, stories }) => {
+                  {grouped.map(({ author, stories }, gIdx) => {
                     const anyViewed = stories.some((s) => s.views.includes(user.id));
                     const avatarSrc = author.profilePicture ? resolveUrl(author.profilePicture) : null;
                     return (
                       <button
                         key={author._id}
-                        onClick={() => handleStoryClick(stories, author._id)}
+                        onClick={() => handleStoryClick(stories, author._id, gIdx)}
                         className="flex flex-col items-center gap-1.5 flex-shrink-0 focus:outline-none"
                         disabled={spinningId === author._id}
                       >
