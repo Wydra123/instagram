@@ -21,6 +21,9 @@ export default function ProfilePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [profileError, setProfileError] = useState('');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // nowy post
@@ -57,6 +60,19 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) setBio(user.bio || '');
   }, [user]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_URL}/api/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setFollowersCount(data.followers?.length ?? 0);
+        setFollowingCount(data.following?.length ?? 0);
+      })
+      .catch(() => {});
+  }, [token]);
 
   const fetchPosts = useCallback(async () => {
     if (!token) return;
@@ -315,58 +331,108 @@ export default function ProfilePage() {
 
         {/* Karta profilu */}
         <div className="bg-white border border-[#dbdbdb] rounded-xl p-8">
-          <div className="flex flex-col items-center gap-3 mb-8">
-            <div className="relative group">
+
+          {/* Avatar + dane */}
+          <div className="flex items-center gap-8 mb-6">
+            {/* Avatar */}
+            <div className="relative group flex-shrink-0">
               {avatarSrc ? (
-                <img src={avatarSrc} alt={user.username} className="w-28 h-28 rounded-full object-cover border-2 border-[#dbdbdb]" />
+                <img src={avatarSrc} alt={user.username} className="w-24 h-24 rounded-full object-cover border-2 border-[#dbdbdb]" />
               ) : (
-                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-4xl font-bold border-2 border-[#dbdbdb]">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-3xl font-bold border-2 border-[#dbdbdb]">
                   {user.username[0].toUpperCase()}
                 </div>
               )}
-              <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                {isUploading
-                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
-                }
-              </button>
+              {isEditingProfile && (
+                <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                  className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  {isUploading
+                    ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                  }
+                </button>
+              )}
             </div>
-            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-              className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50">
-              {isUploading ? 'Przesyłanie...' : 'Zmień zdjęcie profilowe'}
-            </button>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <h1 className="text-xl font-semibold text-[#262626]">{user.username}</h1>
+                {!isEditingProfile && (
+                  <button
+                    onClick={() => { setIsEditingProfile(true); setProfileError(''); setSaveMsg(''); }}
+                    className="px-4 py-1.5 text-sm font-semibold border border-[#dbdbdb] rounded-lg text-[#262626] hover:bg-[#fafafa] transition-colors"
+                  >
+                    Edytuj profil
+                  </button>
+                )}
+              </div>
+
+              {/* Statystyki */}
+              <div className="flex gap-6 mb-3">
+                <div className="text-center">
+                  <span className="text-sm font-semibold text-[#262626]">{posts.length}</span>
+                  <p className="text-xs text-[#8e8e8e]">postów</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-semibold text-[#262626]">{followersCount}</span>
+                  <p className="text-xs text-[#8e8e8e]">obserwujących</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-semibold text-[#262626]">{followingCount}</span>
+                  <p className="text-xs text-[#8e8e8e]">obserwowanych</p>
+                </div>
+              </div>
+
+              {/* Bio statyczne */}
+              {!isEditingProfile && (
+                <p className="text-sm text-[#262626] whitespace-pre-wrap">
+                  {user.bio || <span className="text-[#8e8e8e]">Brak bio</span>}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-4 mb-6">
-            <div>
-              <p className="text-xs text-[#8e8e8e] mb-1 font-medium uppercase tracking-wide">Nazwa użytkownika</p>
-              <p className="text-[#262626] font-semibold text-base">{user.username}</p>
-            </div>
-            <div>
-              <p className="text-xs text-[#8e8e8e] mb-1 font-medium uppercase tracking-wide">Email</p>
-              <p className="text-[#262626] text-sm">{user.email}</p>
-            </div>
-          </div>
-
-          <div className="h-px bg-[#dbdbdb] mb-6" />
-
-          <form onSubmit={handleSaveBio} className="space-y-3">
-            <div>
-              <label className="text-xs text-[#8e8e8e] font-medium uppercase tracking-wide block mb-1">Bio</label>
-              <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={150} rows={3}
-                placeholder="Napisz coś o sobie..."
-                className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
-              <p className="text-right text-xs text-[#8e8e8e] mt-1">{bio.length}/150</p>
-            </div>
-            {profileError && <p className="text-red-500 text-xs">{profileError}</p>}
-            {saveMsg && <p className="text-green-600 text-xs font-semibold">{saveMsg}</p>}
-            <button type="submit" disabled={isSaving}
-              className="w-full bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
-              {isSaving ? 'Zapisywanie...' : 'Zapisz profil'}
-            </button>
-          </form>
+          {/* Formularz edycji — tylko gdy aktywny */}
+          {isEditingProfile && (
+            <>
+              <div className="h-px bg-[#dbdbdb] mb-5" />
+              <form onSubmit={handleSaveBio} className="space-y-3">
+                {isUploading && (
+                  <p className="text-xs text-[#0095f6]">Przesyłanie zdjęcia...</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="text-sm text-[#0095f6] font-semibold hover:text-[#00376b] disabled:opacity-50"
+                >
+                  Zmień zdjęcie profilowe
+                </button>
+                <div>
+                  <label className="text-xs text-[#8e8e8e] font-medium uppercase tracking-wide block mb-1">Bio</label>
+                  <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={150} rows={3}
+                    placeholder="Napisz coś o sobie..."
+                    className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]" />
+                  <p className="text-right text-xs text-[#8e8e8e] mt-1">{bio.length}/150</p>
+                </div>
+                {profileError && <p className="text-red-500 text-xs">{profileError}</p>}
+                {saveMsg && <p className="text-green-600 text-xs font-semibold">{saveMsg}</p>}
+                <div className="flex gap-2">
+                  <button type="button"
+                    onClick={() => { setIsEditingProfile(false); setBio(user.bio || ''); setProfileError(''); setSaveMsg(''); }}
+                    className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors">
+                    Anuluj
+                  </button>
+                  <button type="submit" disabled={isSaving}
+                    className="flex-1 bg-[#0095f6] text-white font-semibold text-sm rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors">
+                    {isSaving ? 'Zapisywanie...' : 'Zapisz'}
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
         </div>
 
         {/* Sekcja postów */}

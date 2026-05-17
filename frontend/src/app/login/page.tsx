@@ -35,7 +35,7 @@ export default function LoginPage() {
     >
       <div className="w-full max-w-sm space-y-3">
         {/* Card logowania */}
-        <div className="bg-white border border-[#dbdbdb] rounded px-10 pt-10 pb-8">
+        <div className="backdrop-blur-md bg-white/50 border border-white/40 rounded px-10 pt-10 pb-8">
           {/* Logo */}
           <div className="flex justify-center mb-8">
             <svg
@@ -94,7 +94,7 @@ export default function LoginPage() {
         </div>
 
         {/* Rejestracja */}
-        <div className="bg-white border border-[#dbdbdb] rounded py-4 text-center text-sm text-[#262626]">
+        <div className="backdrop-blur-md bg-white/50 border border-white/40 rounded py-4 text-center text-sm text-[#262626]">
           Nie masz konta?{' '}
           <Link href="/register" className="text-[#0095f6] font-semibold hover:underline">
             Zarejestruj się

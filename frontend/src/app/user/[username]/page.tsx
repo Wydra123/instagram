@@ -11,6 +11,8 @@ interface PublicUser {
   username: string;
   profilePicture: string;
   bio: string;
+  followers: string[];
+  following: string[];
 }
 
 export default function UserProfilePage() {
@@ -77,25 +79,49 @@ export default function UserProfilePage() {
         ) : profile && (
           <>
             {/* Karta profilu */}
-            <div className="bg-white border border-[#dbdbdb] rounded-xl p-8 mb-6 flex flex-col items-center gap-3 text-center">
-              {profile.profilePicture ? (
-                <img
-                  src={profile.profilePicture.startsWith('http') ? profile.profilePicture : `${API_URL}${profile.profilePicture}`}
-                  alt={profile.username}
-                  className="w-24 h-24 rounded-full object-cover border-2 border-[#dbdbdb]"
-                />
-              ) : (
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-4xl font-bold border-2 border-[#dbdbdb]">
-                  {profile.username[0].toUpperCase()}
+            <div className="bg-white border border-[#dbdbdb] rounded-xl p-8 mb-6">
+              <div className="flex items-center gap-8">
+                {/* Avatar */}
+                <div className="flex-shrink-0">
+                  {profile.profilePicture ? (
+                    <img
+                      src={profile.profilePicture.startsWith('http') ? profile.profilePicture : `${API_URL}${profile.profilePicture}`}
+                      alt={profile.username}
+                      className="w-24 h-24 rounded-full object-cover border-2 border-[#dbdbdb]"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-3xl font-bold border-2 border-[#dbdbdb]">
+                      {profile.username[0].toUpperCase()}
+                    </div>
+                  )}
                 </div>
-              )}
-              <div>
-                <p className="text-[#262626] font-semibold text-lg">@{profile.username}</p>
-                {profile.bio && (
-                  <p className="text-sm text-[#737373] mt-1 max-w-xs">{profile.bio}</p>
-                )}
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl font-semibold text-[#262626] mb-3">{profile.username}</h1>
+
+                  {/* Statystyki */}
+                  <div className="flex gap-6 mb-3">
+                    <div className="text-center">
+                      <span className="text-sm font-semibold text-[#262626]">{posts.length}</span>
+                      <p className="text-xs text-[#8e8e8e]">postów</p>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-sm font-semibold text-[#262626]">{profile.followers?.length ?? 0}</span>
+                      <p className="text-xs text-[#8e8e8e]">obserwujących</p>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-sm font-semibold text-[#262626]">{profile.following?.length ?? 0}</span>
+                      <p className="text-xs text-[#8e8e8e]">obserwowanych</p>
+                    </div>
+                  </div>
+
+                  {/* Bio */}
+                  {profile.bio && (
+                    <p className="text-sm text-[#262626] whitespace-pre-wrap">{profile.bio}</p>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-[#8e8e8e]">{posts.length} {posts.length === 1 ? 'post' : 'posty/postów'}</p>
             </div>
 
             {/* Posty */}
