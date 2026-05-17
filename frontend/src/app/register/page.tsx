@@ -38,7 +38,10 @@ export default function RegisterPage() {
   const isFormValid = username && email && password.length >= 6;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 flex items-center justify-center px-4 [color-scheme:light]">
+    <div
+      className="min-h-screen flex items-center justify-center px-4 [color-scheme:light] bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/auth-bg.png')" }}
+    >
       <div className="w-full max-w-sm space-y-3">
         {/* Card rejestracji */}
         <div className="bg-white border border-[#dbdbdb] rounded px-10 pt-10 pb-8">

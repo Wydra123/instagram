@@ -298,7 +298,10 @@ export default function ProfilePage() {
   const allEditImages = editExistingImages.length + editNewPreviews.length;
 
   return (
-    <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
+    <div
+      className="min-h-screen [color-scheme:light] bg-cover bg-center bg-fixed"
+      style={{ backgroundImage: "url('/feed-bg.png')" }}
+    >
       {cropSrc && (
         <ImageCropModal
           imageSrc={cropSrc}

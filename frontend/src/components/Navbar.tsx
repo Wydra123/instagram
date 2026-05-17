@@ -18,7 +18,7 @@ export default function Navbar() {
     : null;
 
   return (
-    <header className="bg-white border-b border-[#dbdbdb] sticky top-0 z-10">
+    <header className="sticky top-0 z-10 backdrop-blur-md bg-white/40 border-b border-white/30">
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
         <Link href="/">
           <svg viewBox="0 0 186 44" className="w-28" fill="#0095f6" aria-label="Instagram">

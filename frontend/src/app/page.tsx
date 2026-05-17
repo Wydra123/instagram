@@ -50,7 +50,10 @@ export default function FeedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
+    <div
+      className="min-h-screen [color-scheme:light] bg-cover bg-center bg-fixed"
+      style={{ backgroundImage: "url('/feed-bg.png')" }}
+    >
       <Navbar />
       <main className="max-w-lg mx-auto px-4 pt-8 pb-16">
         {loading ? (
