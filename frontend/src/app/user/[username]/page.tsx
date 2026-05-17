@@ -24,6 +24,9 @@ export default function UserProfilePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
@@ -46,6 +49,8 @@ export default function UserProfilePage() {
         const pData = await pRes.json();
         setProfile(uData);
         setPosts(Array.isArray(pData) ? pData : []);
+        setFollowersCount(uData.followers?.length ?? 0);
+        setIsFollowing(uData.followers?.some((id: string) => id === user!.id) ?? false);
       } catch {
         setNotFound(true);
       } finally {
@@ -54,6 +59,24 @@ export default function UserProfilePage() {
     }
     load();
   }, [username, user]);
+
+  async function handleFollow() {
+    if (!profile || !token) return;
+    setFollowLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/users/${profile._id}/follow`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setIsFollowing(data.following);
+      setFollowersCount(data.followersCount);
+    } catch {
+    } finally {
+      setFollowLoading(false);
+    }
+  }
 
   if (isLoading || !user) {
     return (
@@ -64,7 +87,10 @@ export default function UserProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafafa] [color-scheme:light]">
+    <div
+      className="min-h-screen [color-scheme:light] bg-cover bg-center bg-fixed"
+      style={{ backgroundImage: "url('/feed-bg.png')" }}
+    >
       <Navbar />
       <main className="max-w-lg mx-auto px-4 pt-8 pb-16">
         {loading ? (
@@ -98,7 +124,20 @@ export default function UserProfilePage() {
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <h1 className="text-xl font-semibold text-[#262626] mb-3">{profile.username}</h1>
+                  <div className="flex items-center gap-3 mb-3 flex-wrap">
+                    <h1 className="text-xl font-semibold text-[#262626]">{profile.username}</h1>
+                    <button
+                      onClick={handleFollow}
+                      disabled={followLoading}
+                      className={`px-5 py-1.5 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 ${
+                        isFollowing
+                          ? 'border border-[#dbdbdb] text-[#262626] hover:bg-[#fafafa]'
+                          : 'bg-[#0095f6] text-white hover:bg-[#1877f2]'
+                      }`}
+                    >
+                      {followLoading ? '...' : isFollowing ? 'Obserwujesz' : 'Obserwuj'}
+                    </button>
+                  </div>
 
                   {/* Statystyki */}
                   <div className="flex gap-6 mb-3">
@@ -107,7 +146,7 @@ export default function UserProfilePage() {
                       <p className="text-xs text-[#8e8e8e]">postów</p>
                     </div>
                     <div className="text-center">
-                      <span className="text-sm font-semibold text-[#262626]">{profile.followers?.length ?? 0}</span>
+                      <span className="text-sm font-semibold text-[#262626]">{followersCount}</span>
                       <p className="text-xs text-[#8e8e8e]">obserwujących</p>
                     </div>
                     <div className="text-center">

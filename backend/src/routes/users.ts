@@ -64,6 +64,35 @@ usersRouter.put('/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+usersRouter.post('/:id/follow', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const targetId = req.params.id;
+    const myId = req.userId!;
+    if (targetId === myId) { res.status(400).json({ message: 'Nie możesz obserwować siebie' }); return; }
+
+    const [me, target] = await Promise.all([
+      User.findById(myId),
+      User.findById(targetId),
+    ]);
+    if (!me || !target) { res.status(404).json({ message: 'Użytkownik nie istnieje' }); return; }
+
+    const alreadyFollowing = me.following.some((id) => id.toString() === targetId);
+
+    if (alreadyFollowing) {
+      (me as any).following = me.following.filter((id) => id.toString() !== targetId);
+      (target as any).followers = target.followers.filter((id) => id.toString() !== myId);
+    } else {
+      (me.following as any[]).push(target._id);
+      (target.followers as any[]).push(me._id);
+    }
+
+    await Promise.all([me.save(), target.save()]);
+    res.json({ following: !alreadyFollowing, followersCount: target.followers.length });
+  } catch {
+    res.status(500).json({ message: 'Błąd serwera' });
+  }
+});
+
 usersRouter.post('/me/avatar', requireAuth, upload.single('avatar'), async (req: Request, res: Response) => {
   try {
     if (!req.file) { res.status(400).json({ message: 'Brak pliku' }); return; }
