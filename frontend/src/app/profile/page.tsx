@@ -29,7 +29,7 @@ function storyTimeLeft(createdAt: string): string {
 }
 
 export default function ProfilePage() {
-  const { user, token, isLoading, updateUser } = useAuth();
+  const { user, token, isLoading, updateUser, logout } = useAuth();
   const router = useRouter();
 
   // profil
@@ -585,6 +585,14 @@ export default function ProfilePage() {
                     className="px-4 py-1.5 text-sm font-semibold border border-[#dbdbdb] rounded-lg text-[#262626] hover:bg-[#fafafa] transition-colors"
                   >
                     Edytuj profil
+                  </button>
+                )}
+                {!isEditingProfile && (
+                  <button
+                    onClick={logout}
+                    className="px-4 py-1.5 text-sm font-semibold border border-red-200 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    Wyloguj
                   </button>
                 )}
               </div>
