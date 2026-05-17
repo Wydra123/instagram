@@ -37,6 +37,20 @@ usersRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+usersRouter.get('/suggestions', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const me = await User.findById(req.userId).select('following');
+    if (!me) { res.status(404).json({ message: 'Nie znaleziono' }); return; }
+    const excludeIds = [req.userId!, ...me.following.map((id) => id.toString())];
+    const users = await User.find({ _id: { $nin: excludeIds } })
+      .select('-passwordHash -email')
+      .limit(20);
+    res.json(users);
+  } catch {
+    res.status(500).json({ message: 'Błąd serwera' });
+  }
+});
+
 usersRouter.get('/:username', async (req: Request, res: Response) => {
   try {
     const user = await User.findOne({ username: req.params.username }).select('-passwordHash -email');
