@@ -76,13 +76,20 @@ export default function FeedPage() {
     if (user) { fetchPosts(); fetchStories(); }
   }, [user, fetchPosts, fetchStories]);
 
-  // Group stories by author, preserving order of first appearance
-  const grouped: AuthorGroup[] = allStories.reduce<AuthorGroup[]>((acc, story) => {
-    const existing = acc.find((g) => g.author._id === story.author._id);
-    if (existing) { existing.stories.push(story); }
-    else { acc.push({ author: story.author, stories: [story] }); }
-    return acc;
-  }, []);
+  // Group stories by author, then sort: unviewed first, viewed (any) last
+  const grouped: AuthorGroup[] = allStories
+    .reduce<AuthorGroup[]>((acc, story) => {
+      const existing = acc.find((g) => g.author._id === story.author._id);
+      if (existing) { existing.stories.push(story); }
+      else { acc.push({ author: story.author, stories: [story] }); }
+      return acc;
+    }, [])
+    .sort((a, b) => {
+      const aViewed = a.stories.some((s) => s.views.includes(user!.id));
+      const bViewed = b.stories.some((s) => s.views.includes(user!.id));
+      if (aViewed === bViewed) return 0;
+      return aViewed ? 1 : -1;
+    });
 
   useEffect(() => {
     if (viewerIdx === null) return;
@@ -230,10 +237,10 @@ export default function FeedPage() {
 
         {/* Stories bar */}
         {grouped.length > 0 && (
-          <div className="bg-white border border-[#dbdbdb] rounded-xl px-4 py-3">
+          <div className="px-4 py-3">
             <div className="flex gap-4 overflow-x-auto pb-1 scrollbar-none">
               {grouped.map(({ author, stories }) => {
-                const allViewed = stories.every((s) => s.views.includes(user.id));
+                const anyViewed = stories.some((s) => s.views.includes(user.id));
                 const avatarSrc = author.profilePicture ? resolveUrl(author.profilePicture) : null;
                 return (
                   <button
@@ -241,7 +248,7 @@ export default function FeedPage() {
                     onClick={() => openViewer(stories, 0)}
                     className="flex flex-col items-center gap-1.5 flex-shrink-0 focus:outline-none"
                   >
-                    <div className={`p-0.5 rounded-full ${allViewed ? 'bg-[#dbdbdb]' : 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]'}`}>
+                    <div className={`p-0.5 rounded-full ${anyViewed ? 'bg-[#dbdbdb]' : 'bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7]'}`}>
                       <div className="p-0.5 bg-white rounded-full">
                         {avatarSrc ? (
                           <img src={avatarSrc} alt={author.username} className="w-14 h-14 rounded-full object-cover" />
