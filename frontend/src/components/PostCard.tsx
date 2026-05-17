@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { API_URL } from '@/context/AuthContext';
 
@@ -69,7 +69,7 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
     }
   }
 
-  async function handleAddComment(e: FormEvent) {
+  async function handleAddComment(e: { preventDefault(): void }) {
     e.preventDefault();
     if (!commentText.trim() || isCommenting) return;
     setIsCommenting(true);
@@ -119,11 +119,11 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
 
       {/* Karuzela zdjęć */}
       {images.length > 0 && (
-        <div className="relative bg-black select-none">
+        <div className="relative select-none">
           <img
             src={resolveUrl(images[imgIdx])}
             alt=""
-            className="w-full max-h-96 object-contain"
+            className="w-full max-h-96 object-cover"
           />
           {images.length > 1 && (
             <>
