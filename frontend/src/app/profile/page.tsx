@@ -756,9 +756,9 @@ export default function ProfilePage() {
               <p className="text-xs">Stories znikają po 24h</p>
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="flex flex-wrap gap-x-5 gap-y-7 pt-3 pl-3 pb-7">
               {stories.map((story, idx) => (
-                <div key={story._id} className="flex-shrink-0 group/story relative">
+                <div key={story._id} className="group/story relative">
                   <button
                     onClick={() => setViewingStoryIdx(idx)}
                     className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#0095f6] ring-offset-2 block focus:outline-none cursor-pointer"
