@@ -6,6 +6,7 @@ import { connectDB } from './db/connection';
 import { authRouter } from './routes/auth';
 import { postsRouter } from './routes/posts';
 import { usersRouter } from './routes/users';
+import { storiesRouter } from './routes/stories';
 
 dotenv.config();
 
@@ -23,6 +24,8 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/stories', storiesRouter);
+console.log('DEBUG: stories router registered');
 
 connectDB()
   .then(() => {

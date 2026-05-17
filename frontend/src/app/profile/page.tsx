@@ -11,6 +11,23 @@ function resolveUrl(url: string) {
   return url.startsWith('http') ? url : `${API_URL}${url}`;
 }
 
+interface Story {
+  _id: string;
+  image: string;
+  caption: string;
+  author: { _id: string; username: string; profilePicture: string };
+  views: string[];
+  createdAt: string;
+}
+
+function storyTimeLeft(createdAt: string): string {
+  const ms = new Date(createdAt).getTime() + 24 * 3600 * 1000 - Date.now();
+  if (ms <= 0) return 'Wygasło';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h` : `${m}m`;
+}
+
 export default function ProfilePage() {
   const { user, token, isLoading, updateUser } = useAuth();
   const router = useRouter();
@@ -39,8 +56,19 @@ export default function ProfilePage() {
 
   // cropper
   const [cropSrc, setCropSrc] = useState<string | null>(null);
-  const [cropTarget, setCropTarget] = useState<'post' | 'edit' | null>(null);
+  const [cropTarget, setCropTarget] = useState<'post' | 'edit' | 'story' | null>(null);
   const [cropQueue, setCropQueue] = useState<File[]>([]);
+
+  // stories
+  const [stories, setStories] = useState<Story[]>([]);
+  const [storiesLoading, setStoriesLoading] = useState(true);
+  const [showStoryForm, setShowStoryForm] = useState(false);
+  const [storyImage, setStoryImage] = useState<File | null>(null);
+  const [storyImagePreview, setStoryImagePreview] = useState('');
+  const [storyCaption, setStoryCaption] = useState('');
+  const [isPostingStory, setIsPostingStory] = useState(false);
+  const [storyError, setStoryError] = useState('');
+  const storyFileRef = useRef<HTMLInputElement>(null);
 
   // edycja posta
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -90,7 +118,24 @@ export default function ProfilePage() {
     }
   }, [token]);
 
+  const fetchStories = useCallback(async () => {
+    if (!token) return;
+    setStoriesLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/stories/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setStories(Array.isArray(data) ? data : []);
+    } catch {
+      setStories([]);
+    } finally {
+      setStoriesLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => { fetchStories(); }, [fetchStories]);
 
   if (isLoading || !user) {
     return (
@@ -151,7 +196,7 @@ export default function ProfilePage() {
   }
 
   // --- cropper ---
-  function startCropQueue(files: File[], target: 'post' | 'edit') {
+  function startCropQueue(files: File[], target: 'post' | 'edit' | 'story') {
     if (files.length === 0) return;
     setCropQueue(files.slice(1));
     setCropTarget(target);
@@ -177,6 +222,9 @@ export default function ProfilePage() {
     } else if (cropTarget === 'edit') {
       setEditNewImages((prev) => [...prev, croppedFile]);
       setEditNewPreviews((prev) => [...prev, URL.createObjectURL(croppedFile)]);
+    } else if (cropTarget === 'story') {
+      setStoryImage(croppedFile);
+      setStoryImagePreview(URL.createObjectURL(croppedFile));
     }
 
     // Next in queue
@@ -196,6 +244,7 @@ export default function ProfilePage() {
     setCropQueue([]);
     if (postFileRef.current) postFileRef.current.value = '';
     if (editFileRef.current) editFileRef.current.value = '';
+    if (storyFileRef.current) storyFileRef.current.value = '';
   }
 
   // --- nowy post ---
@@ -309,6 +358,51 @@ export default function ProfilePage() {
       headers: { Authorization: `Bearer ${token}` },
     });
     setPosts((prev) => prev.filter((p) => p._id !== id));
+  }
+
+  // --- stories ---
+  function handleStoryImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    startCropQueue([file], 'story');
+    e.target.value = '';
+  }
+
+  async function handleCreateStory(e: FormEvent) {
+    e.preventDefault();
+    setStoryError('');
+    if (!storyImage) { setStoryError('Wybierz zdjęcie do story'); return; }
+    setIsPostingStory(true);
+    try {
+      const form = new FormData();
+      form.append('image', storyImage);
+      form.append('caption', storyCaption.trim());
+      const res = await fetch(`${API_URL}/api/stories`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setStoryImage(null);
+      setStoryImagePreview('');
+      setStoryCaption('');
+      setShowStoryForm(false);
+      fetchStories();
+    } catch (err) {
+      setStoryError(err instanceof Error ? err.message : 'Błąd dodawania story');
+    } finally {
+      setIsPostingStory(false);
+    }
+  }
+
+  async function handleDeleteStory(id: string) {
+    if (!confirm('Usunąć to story?')) return;
+    await fetch(`${API_URL}/api/stories/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setStories((prev) => prev.filter((s) => s._id !== id));
   }
 
   const allEditImages = editExistingImages.length + editNewPreviews.length;
@@ -432,6 +526,134 @@ export default function ProfilePage() {
                 </div>
               </form>
             </>
+          )}
+        </div>
+
+        {/* Sekcja stories */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[#262626] font-semibold text-base">
+              Moje stories <span className="text-[#8e8e8e] font-normal">({stories.length})</span>
+            </h2>
+            <button
+              onClick={() => { setShowStoryForm((v) => !v); setStoryError(''); }}
+              className="flex items-center gap-1.5 bg-[#0095f6] text-white text-sm font-semibold px-4 py-1.5 rounded-lg hover:bg-[#1877f2] transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Nowe story
+            </button>
+          </div>
+
+          {/* Formularz nowego story */}
+          {showStoryForm && (
+            <div className="bg-white border border-[#dbdbdb] rounded-xl p-6 mb-4">
+              <form onSubmit={handleCreateStory} className="space-y-4">
+                <p className="text-xs font-semibold text-[#8e8e8e] uppercase tracking-wide">Nowe story</p>
+
+                {storyImagePreview ? (
+                  <div className="relative w-32 aspect-square rounded-xl overflow-hidden group/thumb mx-auto">
+                    <img src={storyImagePreview} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => { setStoryImage(null); setStoryImagePreview(''); }}
+                      className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity hover:bg-red-500"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => storyFileRef.current?.click()}
+                      className="absolute bottom-1 inset-x-0 mx-auto w-max px-2 py-0.5 bg-black/60 text-white text-[10px] rounded opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+                    >
+                      Zmień
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => storyFileRef.current?.click()}
+                    className="w-full border-2 border-dashed border-[#dbdbdb] rounded-lg py-8 flex flex-col items-center gap-2 text-[#8e8e8e] hover:border-[#a8a8a8] hover:text-[#262626] transition-colors"
+                  >
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 3.75h-9A2.25 2.25 0 005.25 6v8.25" />
+                    </svg>
+                    <span className="text-sm font-medium">Dodaj zdjęcie (wymagane)</span>
+                  </button>
+                )}
+                <input ref={storyFileRef} type="file" accept="image/*" className="hidden" onChange={handleStoryImageSelect} />
+
+                <textarea
+                  value={storyCaption}
+                  onChange={(e) => setStoryCaption(e.target.value)}
+                  maxLength={2200}
+                  rows={2}
+                  placeholder="Opis (opcjonalnie)..."
+                  className="w-full bg-[#fafafa] border border-[#dbdbdb] rounded-lg text-sm text-[#262626] placeholder:text-[#8e8e8e] px-3 py-2 resize-none focus:outline-none focus:border-[#a8a8a8]"
+                />
+
+                {storyError && <p className="text-red-500 text-xs">{storyError}</p>}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowStoryForm(false); setStoryImage(null); setStoryImagePreview(''); setStoryCaption(''); }}
+                    className="flex-1 border border-[#dbdbdb] text-[#262626] text-sm font-semibold rounded-lg py-2 hover:bg-[#fafafa] transition-colors"
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPostingStory}
+                    className="flex-1 bg-[#0095f6] text-white text-sm font-semibold rounded-lg py-2 hover:bg-[#1877f2] disabled:opacity-50 transition-colors"
+                  >
+                    {isPostingStory ? 'Dodawanie...' : 'Opublikuj story'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Lista stories */}
+          {storiesLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="w-7 h-7 border-2 border-[#dbdbdb] border-t-[#0095f6] rounded-full animate-spin" />
+            </div>
+          ) : stories.length === 0 ? (
+            <div className="bg-white border border-[#dbdbdb] rounded-xl py-10 flex flex-col items-center gap-2 text-[#8e8e8e]">
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
+              </svg>
+              <p className="text-sm font-medium">Brak aktywnych stories</p>
+              <p className="text-xs">Stories znikają po 24h</p>
+            </div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {stories.map((story) => (
+                <div key={story._id} className="flex-shrink-0 group/story relative">
+                  <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#0095f6] ring-offset-2">
+                    <img src={resolveUrl(story.image)} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  {/* czas pozostały */}
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full">
+                    {storyTimeLeft(story.createdAt)}
+                  </span>
+                  {/* usuń */}
+                  <button
+                    onClick={() => handleDeleteStory(story._id)}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/story:opacity-100 transition-opacity shadow"
+                    title="Usuń story"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                  {/* caption tooltip */}
+                  {story.caption && (
+                    <p className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-[#8e8e8e] whitespace-nowrap max-w-[80px] truncate">{story.caption}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
