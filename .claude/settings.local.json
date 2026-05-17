@@ -30,10 +30,13 @@
       "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"stalkerpl000@gmail.com\\\\\",\\\\\"password\\\\\":\\\\\"test\\\\\"}\")",
       "Bash(node -e ' *)",
       "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"alice@example.com\\\\\",\\\\\"password\\\\\":\\\\\"password123\\\\\"}\")",
-      "Bash(curl -s http://localhost:8080 -o /dev/null -w \"%{http_code}\")"
+      "Bash(curl -s http://localhost:8080 -o /dev/null -w \"%{http_code}\")",
+      "PowerShell(Rename-Item -Path \"C:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\" -NewName \"innlokaste\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Admin\\\\Desktop\\\\instagram\\\\frontend\\\\src\\\\app\\\\user\\\\[username]\")"
     ],
     "additionalDirectories": [
-      "c:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Desktop-instagram\\memory"
+      "c:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Desktop-instagram\\memory",
+      "c:\\Users\\Admin\\Desktop\\instagram\\frontend\\src\\app\\user"
     ]
   }
 }

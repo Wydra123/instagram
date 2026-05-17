@@ -37,6 +37,16 @@ usersRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+usersRouter.get('/:username', async (req: Request, res: Response) => {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('-passwordHash -email');
+    if (!user) { res.status(404).json({ message: 'Użytkownik nie istnieje' }); return; }
+    res.json(user);
+  } catch {
+    res.status(500).json({ message: 'Błąd serwera' });
+  }
+});
+
 usersRouter.put('/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const { bio } = req.body;

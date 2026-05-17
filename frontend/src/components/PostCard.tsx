@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent, useRef } from 'react';
+import Link from 'next/link';
 import { API_URL } from '@/context/AuthContext';
 
 export interface PostComment {
@@ -101,7 +102,7 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
   return (
     <div className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden">
       {/* Nagłówek autora */}
-      <div className="flex items-center gap-3 px-4 py-3">
+      <Link href={`/user/${post.author.username}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#fafafa] transition-colors">
         {authorAvatar ? (
           <img src={authorAvatar} alt={post.author.username} className="w-9 h-9 rounded-full object-cover shrink-0" />
         ) : (
@@ -110,7 +111,7 @@ export default function PostCard({ post, currentUserId, token, onEdit, onDelete,
           </div>
         )}
         <span className="text-sm font-semibold text-[#262626]">{post.author.username}</span>
-      </div>
+      </Link>
 
       {/* Zdjęcie */}
       {post.imageUrl && (

@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Post } from '../models/Post';
+import { User } from '../models/User';
 import { requireAuth } from '../middleware/auth';
 
 export const postsRouter = Router();
@@ -51,6 +52,19 @@ postsRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const posts = await Post.find({ author: req.userId } as any)
+      .sort({ createdAt: -1 })
+      .populate('author', 'username profilePicture')
+      .populate('comments.user', 'username profilePicture');
+    res.json(posts);
+  } catch { res.status(500).json({ message: 'Błąd serwera' }); }
+});
+
+postsRouter.get('/user/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username });
+    if (!user) { res.status(404).json({ message: 'Użytkownik nie istnieje' }); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const posts = await Post.find({ author: user._id } as any)
       .sort({ createdAt: -1 })
       .populate('author', 'username profilePicture')
       .populate('comments.user', 'username profilePicture');
