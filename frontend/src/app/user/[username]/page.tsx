@@ -51,6 +51,7 @@ export default function UserProfilePage() {
 
   const [stories, setStories] = useState<Story[]>([]);
   const [viewingStoryIdx, setViewingStoryIdx] = useState<number | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
@@ -115,6 +116,23 @@ export default function UserProfilePage() {
         )
       );
     } catch {}
+  }
+
+  async function startChat() {
+    if (!profile || !token) return;
+    setChatLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: profile._id }),
+      });
+      const data = await res.json();
+      if (res.ok) router.push(`/chat/${data._id}`);
+    } catch {
+    } finally {
+      setChatLoading(false);
+    }
   }
 
   async function handleFollow() {
@@ -310,6 +328,13 @@ export default function UserProfilePage() {
                       }`}
                     >
                       {followLoading ? '...' : isFollowing ? 'Obserwujesz' : 'Obserwuj'}
+                    </button>
+                    <button
+                      onClick={startChat}
+                      disabled={chatLoading}
+                      className="px-5 py-1.5 text-sm font-semibold rounded-lg border border-[#dbdbdb] text-[#262626] hover:bg-[#fafafa] transition-colors disabled:opacity-50"
+                    >
+                      {chatLoading ? '...' : 'Wiadomość'}
                     </button>
                   </div>
 
