@@ -49,7 +49,6 @@ export default function ChatConversationPage() {
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const latestMsgId = useRef<string | null>(null);
   const firstLoadDone = useRef(false);
 
   useEffect(() => {
@@ -58,7 +57,6 @@ export default function ChatConversationPage() {
 
   // Reset state when conversation changes
   useEffect(() => {
-    latestMsgId.current = null;
     firstLoadDone.current = false;
     setMessages([]);
     setLoading(true);
@@ -79,19 +77,20 @@ export default function ChatConversationPage() {
 
   const fetchMessages = useCallback(async () => {
     if (!token || !id) return;
-    const res = await fetch(`${API_URL}/api/conversations/${id}/messages`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    if (!Array.isArray(data)) return;
-    setMessages((prev) => {
-      const lastNew = data[data.length - 1]?._id ?? null;
-      if (lastNew !== latestMsgId.current) {
-        latestMsgId.current = lastNew;
-        return data;
-      }
-      return prev;
-    });
+    try {
+      const res = await fetch(`${API_URL}/api/conversations/${id}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!Array.isArray(data)) return;
+      setMessages((prev) => {
+        const lastNew = data[data.length - 1]?._id ?? null;
+        const lastPrev = prev[prev.length - 1]?._id ?? null;
+        return lastNew !== lastPrev ? data : prev;
+      });
+    } catch {
+    }
   }, [token, id]);
 
   useEffect(() => {
@@ -105,11 +104,10 @@ export default function ChatConversationPage() {
         const convList = await convRes.json();
         const conv = Array.isArray(convList) ? convList.find((c: Conversation) => c._id === id) : null;
         setConversation(conv ?? null);
-        await fetchMessages();
       } catch {
-      } finally {
-        setLoading(false);
       }
+      await fetchMessages();
+      setLoading(false);
     }
     init();
   }, [token, id, fetchMessages]);
@@ -148,7 +146,6 @@ export default function ChatConversationPage() {
       const msg = await res.json();
       if (res.ok) {
         setMessages((prev) => [...prev, msg]);
-        latestMsgId.current = msg._id;
       }
     } catch {
     } finally {
