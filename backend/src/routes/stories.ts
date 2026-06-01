@@ -2,20 +2,23 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { Story } from '../models/Story';
-import { User } from '../models/User';
+import { ObjectId } from 'mongodb';
+import { getDb } from '../db/connection';
 import { requireAuth } from '../middleware/auth';
 
 export const storiesRouter = Router();
 
+// Debug: logujemy każde żądanie do /api/stories
 storiesRouter.use((req, _res, next) => {
   console.log('DEBUG stories hit:', req.method, req.path);
   next();
 });
 
+// Upewniamy się, że katalog na zdjęcia stories istnieje
 const storiesDir = path.join(process.cwd(), 'uploads', 'stories');
 if (!fs.existsSync(storiesDir)) fs.mkdirSync(storiesDir, { recursive: true });
 
+// Konfiguracja multer: jedno zdjęcie na story, max 10 MB
 const storage = multer.diskStorage({
   destination: storiesDir,
   filename: (_req, file, cb) => {
@@ -33,86 +36,147 @@ const upload = multer({
   },
 });
 
+/** Usuwa lokalny plik z dysku (pomija zewnętrzne URL). */
 function deleteLocalFile(url: string) {
   if (!url.startsWith('http')) {
     fs.unlink(path.join(process.cwd(), url), () => {});
   }
 }
 
-// --- Utwórz story ---
+/**
+ * Ręczny populate: zamienia ObjectId autora na obiekt { username, profilePicture }.
+ * Batch-lookup — jedno zapytanie do bazy dla całej tablicy stories.
+ */
+async function populateStories(stories: Record<string, unknown>[]) {
+  if (stories.length === 0) return [];
+  const db = getDb();
+
+  // Zbieramy unikalne ID autorów
+  const authorIds = [...new Set(stories.map((s) => (s.author as ObjectId).toString()))];
+  const authors = await db.collection('users').find(
+    { _id: { $in: authorIds.map((id) => new ObjectId(id)) } },
+    { projection: { username: 1, profilePicture: 1 } },
+  ).toArray();
+
+  // Mapa ID → dane użytkownika
+  const authorsMap = new Map(authors.map((a) => [a._id.toString(), a]));
+
+  return stories.map((s) => ({
+    ...s,
+    author: authorsMap.get((s.author as ObjectId).toString()) ?? s.author,
+  }));
+}
+
+// --- POST /api/stories ---
+// Tworzy nowe story. Wymaga zdjęcia; podpis jest opcjonalny.
+// TTL index w bazie automatycznie usunie story po 24h (86400 s).
 storiesRouter.post('/', requireAuth, upload.single('image'), async (req: Request, res: Response) => {
   try {
     const file = req.file;
-    if (!file) {
-      res.status(400).json({ message: 'Story musi zawierać zdjęcie' });
-      return;
-    }
+    if (!file) { res.status(400).json({ message: 'Story musi zawierać zdjęcie' }); return; }
+
     const { caption } = req.body;
-    const image = `/uploads/stories/${file.filename}`;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const story = await Story.create({ author: req.userId as any, image, caption: caption?.trim() ?? '' });
-    const populated = await Story.findById(story._id).populate('author', 'username profilePicture');
+    const now = new Date();
+    const storyDoc = {
+      _id: new ObjectId(),
+      author: new ObjectId(req.userId!),
+      image: `/uploads/stories/${file.filename}`,
+      caption: caption?.trim() ?? '',
+      views: [] as ObjectId[], // lista ID użytkowników, którzy obejrzeli story
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const db = getDb();
+    await db.collection('stories').insertOne(storyDoc);
+
+    // Zwracamy story z wypełnionymi danymi autora
+    const [populated] = await populateStories([storyDoc as unknown as Record<string, unknown>]);
     res.status(201).json(populated);
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Moje stories ---
+// --- GET /api/stories/me ---
+// Pobiera stories zalogowanego użytkownika (posortowane od najnowszego).
 storiesRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stories = await Story.find({ author: req.userId } as any)
+    const db = getDb();
+    const stories = await db.collection('stories')
+      .find({ author: new ObjectId(req.userId!) })
       .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture');
-    res.json(stories);
+      .toArray();
+    res.json(await populateStories(stories as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Stories danego użytkownika ---
+// --- GET /api/stories/user/:username ---
+// Pobiera stories konkretnego użytkownika po jego nazwie.
 storiesRouter.get('/user/:username', async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username });
+    const db = getDb();
+
+    // Najpierw szukamy użytkownika po username, żeby uzyskać jego _id
+    const user = await db.collection('users').findOne({ username: String(req.params.username) });
     if (!user) { res.status(404).json({ message: 'Użytkownik nie istnieje' }); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stories = await Story.find({ author: user._id } as any)
+
+    const stories = await db.collection('stories')
+      .find({ author: user._id })
       .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture');
-    res.json(stories);
+      .toArray();
+    res.json(await populateStories(stories as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Wszystkie aktywne stories ---
+// --- GET /api/stories ---
+// Pobiera wszystkie aktywne stories (te, które nie wygasły jeszcze przez TTL).
 storiesRouter.get('/', async (_req, res) => {
   try {
-    const stories = await Story.find()
-      .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture');
-    res.json(stories);
+    const db = getDb();
+    const stories = await db.collection('stories').find().sort({ createdAt: -1 }).toArray();
+    res.json(await populateStories(stories as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Oznacz jako obejrzane ---
+// --- POST /api/stories/:id/view ---
+// Rejestruje obejrzenie story. Dodaje ID użytkownika do tablicy views (raz).
 storiesRouter.post('/:id/view', requireAuth, async (req: Request, res: Response) => {
   try {
-    const story = await Story.findById(req.params.id);
+    const db = getDb();
+    const story = await db.collection('stories').findOne({ _id: new ObjectId(String(req.params.id)) });
     if (!story) { res.status(404).json({ message: 'Story nie znalezione' }); return; }
-    const uid = req.userId!;
-    if (!story.views.some((id) => id.toString() === uid)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      story.views.push(uid as any);
-      await story.save();
+
+    const uid = new ObjectId(req.userId!);
+    const alreadyViewed = (story.views as ObjectId[]).some((id) => id.toString() === req.userId);
+
+    // Dodajemy tylko jeśli użytkownik jeszcze nie obejrzał — brak duplikatów w tablicy views
+    if (!alreadyViewed) {
+      await db.collection('stories').updateOne(
+        { _id: story._id },
+        { $push: { views: uid } } as never,
+      );
     }
-    res.json({ views: story.views.length });
+
+    // Zwracamy aktualną liczbę wyświetleń
+    const updated = await db.collection('stories').findOne({ _id: story._id }, { projection: { views: 1 } });
+    res.json({ views: updated?.views?.length ?? 0 });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Usuń story ---
+// --- DELETE /api/stories/:id ---
+// Usuwa story i powiązany plik z dysku. Tylko właściciel może usunąć.
 storiesRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const story = await Story.findOne({ _id: req.params.id, author: req.userId } as any);
+    const db = getDb();
+
+    // Warunek: _id i author muszą pasować
+    const story = await db.collection('stories').findOne({
+      _id: new ObjectId(String(req.params.id)),
+      author: new ObjectId(req.userId!),
+    });
     if (!story) { res.status(404).json({ message: 'Story nie istnieje lub brak uprawnień' }); return; }
-    deleteLocalFile(story.image);
-    await story.deleteOne();
+
+    deleteLocalFile(story.image as string);
+    await db.collection('stories').deleteOne({ _id: story._id });
     res.json({ message: 'Story usunięte' });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });

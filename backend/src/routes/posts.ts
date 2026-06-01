@@ -2,15 +2,17 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { Post } from '../models/Post';
-import { User } from '../models/User';
+import { ObjectId } from 'mongodb';
+import { getDb } from '../db/connection';
 import { requireAuth } from '../middleware/auth';
 
 export const postsRouter = Router();
 
+// Upewniamy się, że katalog na zdjęcia postów istnieje
 const postsDir = path.join(process.cwd(), 'uploads', 'posts');
 if (!fs.existsSync(postsDir)) fs.mkdirSync(postsDir, { recursive: true });
 
+// Konfiguracja multer: zdjęcia postów trafiają na dysk z unikalną nazwą
 const storage = multer.diskStorage({
   destination: postsDir,
   filename: (_req, file, cb) => {
@@ -21,86 +23,169 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // max 10 MB na plik
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Dozwolone są tylko pliki graficzne'));
   },
 });
 
-async function populatePost(id: unknown) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return Post.findById(id as any)
-    .populate('author', 'username profilePicture')
-    .populate('comments.user', 'username profilePicture') as any;
-}
-
+/** Usuwa lokalny plik z dysku (pomija zewnętrzne URL zaczynające się od "http"). */
 function deleteLocalFile(url: string) {
   if (!url.startsWith('http')) {
     fs.unlink(path.join(process.cwd(), url), () => {});
   }
 }
 
+/**
+ * Normalizuje pole images:
+ * - jeśli post ma nowe pole images[] — zwraca je
+ * - jeśli post ma stare pole imageUrl — zwraca je jako tablicę jednoelementową
+ * - jeśli oba są puste — zwraca []
+ * (obsługa starszego formatu danych)
+ */
+function normalizeImages(post: Record<string, unknown>): string[] {
+  const images = post.images as string[] | undefined;
+  const imageUrl = post.imageUrl as string | undefined;
+  if (images?.length) return images;
+  if (imageUrl) return [imageUrl];
+  return [];
+}
+
+/**
+ * Ręczny odpowiednik Mongoose .populate() dla tablicy postów.
+ *
+ * Zbiera wszystkie unikalne ID autorów i użytkowników z komentarzy,
+ * pobiera ich dane jednym zapytaniem do kolekcji users,
+ * a następnie podmienia ObjectId na pełne obiekty użytkowników.
+ *
+ * Batch-lookup (jedno zapytanie na wszystkie posty) zamiast N+1 zapytań.
+ */
+async function populatePosts(posts: Record<string, unknown>[]) {
+  if (posts.length === 0) return [];
+  const db = getDb();
+
+  // Zbierz wszystkie ID użytkowników potrzebne do wypełnienia danych
+  const userIds = new Set<string>();
+  for (const p of posts) {
+    if (p.author) userIds.add((p.author as ObjectId).toString());
+    for (const c of (p.comments as Record<string, unknown>[] ?? [])) {
+      if (c.user) userIds.add((c.user as ObjectId).toString());
+    }
+  }
+
+  // Jedno zapytanie po wszystkich potrzebnych użytkownikach
+  const users = await db.collection('users').find(
+    { _id: { $in: [...userIds].map((id) => new ObjectId(id)) } },
+    { projection: { username: 1, profilePicture: 1 } }, // tylko pola widoczne w UI
+  ).toArray();
+
+  // Mapa ID → dane użytkownika dla szybkiego wyszukiwania
+  const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+  // Podmień ObjectId na obiekty z danymi użytkownika
+  return posts.map((p) => ({
+    ...p,
+    images: normalizeImages(p),
+    author: usersMap.get((p.author as ObjectId).toString()) ?? p.author,
+    comments: (p.comments as Record<string, unknown>[] ?? []).map((c) => ({
+      ...c,
+      user: usersMap.get((c.user as ObjectId).toString()) ?? c.user,
+    })),
+  }));
+}
+
+// --- POST /api/posts ---
+// Tworzy nowy post. Przyjmuje zdjęcia (multipart/form-data) i opcjonalny podpis.
 postsRouter.post('/', requireAuth, upload.array('images', 10), async (req: Request, res: Response) => {
   try {
     const { caption } = req.body;
     const files = req.files as Express.Multer.File[] | undefined;
     const images = files?.map((f) => `/uploads/posts/${f.filename}`) ?? [];
+
+    // Post musi mieć przynajmniej zdjęcie albo tekst
     if (!caption?.trim() && images.length === 0) {
       res.status(400).json({ message: 'Post musi zawierać tekst lub zdjęcie' }); return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const post = await Post.create({ author: req.userId as any, caption: caption?.trim() ?? '', images });
-    res.status(201).json(await populatePost(post._id));
+    const db = getDb();
+    const now = new Date();
+    const postDoc = {
+      _id: new ObjectId(),
+      author: new ObjectId(req.userId!),
+      caption: caption?.trim() ?? '',
+      images,
+      imageUrl: '',        // puste — nowe posty używają pola images[]
+      likes: [] as ObjectId[],
+      comments: [] as unknown[],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.collection('posts').insertOne(postDoc);
+
+    // Zwracamy post z wypełnionymi danymi autora
+    const [populated] = await populatePosts([postDoc as unknown as Record<string, unknown>]);
+    res.status(201).json(populated);
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
+// --- GET /api/posts/me ---
+// Pobiera posty zalogowanego użytkownika, posortowane od najnowszego.
 postsRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const posts = await Post.find({ author: req.userId } as any)
+    const db = getDb();
+    const posts = await db.collection('posts')
+      .find({ author: new ObjectId(req.userId!) })
       .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture')
-      .populate('comments.user', 'username profilePicture');
-    res.json(posts);
+      .toArray();
+    res.json(await populatePosts(posts as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
+// --- GET /api/posts/user/:username ---
+// Pobiera posty konkretnego użytkownika po jego nazwie.
 postsRouter.get('/user/:username', async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username });
+    const db = getDb();
+
+    // Najpierw szukamy użytkownika po username, żeby uzyskać jego _id
+    const user = await db.collection('users').findOne({ username: String(req.params.username) });
     if (!user) { res.status(404).json({ message: 'Użytkownik nie istnieje' }); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const posts = await Post.find({ author: user._id } as any)
+
+    const posts = await db.collection('posts')
+      .find({ author: user._id })
       .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture')
-      .populate('comments.user', 'username profilePicture');
-    res.json(posts);
+      .toArray();
+    res.json(await populatePosts(posts as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
+// --- GET /api/posts ---
+// Pobiera wszystkie posty (globalny feed), posortowane od najnowszego.
 postsRouter.get('/', async (_req, res) => {
   try {
-    const posts = await Post.find()
-      .sort({ createdAt: -1 })
-      .populate('author', 'username profilePicture')
-      .populate('comments.user', 'username profilePicture');
-    res.json(posts);
+    const db = getDb();
+    const posts = await db.collection('posts').find().sort({ createdAt: -1 }).toArray();
+    res.json(await populatePosts(posts as unknown as Record<string, unknown>[]));
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
+// --- PUT /api/posts/:id ---
+// Aktualizuje post (podpis, zdjęcia). Tylko właściciel może edytować.
 postsRouter.put('/:id', requireAuth, upload.array('images', 10), async (req: Request, res: Response) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const post = await Post.findOne({ _id: req.params.id, author: req.userId } as any);
+    const db = getDb();
+
+    // Warunek: _id i author muszą pasować — zabezpieczenie przed edycją cudzych postów
+    const post = await db.collection('posts').findOne({
+      _id: new ObjectId(String(req.params.id)),
+      author: new ObjectId(req.userId!),
+    });
     if (!post) { res.status(404).json({ message: 'Post nie istnieje lub brak uprawnień' }); return; }
 
     const { caption, removeImages } = req.body;
+    let images = normalizeImages(post as Record<string, unknown>);
 
-    // Normalize existing images (handle legacy imageUrl)
-    let images: string[] = post.images?.length ? [...post.images] : (post.imageUrl ? [post.imageUrl] : []);
-
-    // Remove specified images
+    // Usuń wskazane zdjęcia — zarówno z tablicy jak i z dysku
     if (removeImages) {
       const toRemove: string[] = JSON.parse(removeImages);
       toRemove.forEach((url) => {
@@ -109,91 +194,134 @@ postsRouter.put('/:id', requireAuth, upload.array('images', 10), async (req: Req
       });
     }
 
-    // Add new uploaded images
+    // Dołącz nowo wgrane pliki
     const files = req.files as Express.Multer.File[] | undefined;
     const newImages = files?.map((f) => `/uploads/posts/${f.filename}`) ?? [];
     images = [...images, ...newImages];
 
-    if (caption !== undefined) post.caption = caption.trim();
-    post.images = images;
-    post.imageUrl = '';
-
-    if (!post.caption && images.length === 0) {
+    const updatedCaption = caption !== undefined ? caption.trim() : post.caption;
+    if (!updatedCaption && images.length === 0) {
       res.status(400).json({ message: 'Post musi zawierać tekst lub zdjęcie' }); return;
     }
-    await post.save();
-    res.json(await populatePost(post._id));
+
+    // Zapisujemy zmiany; imageUrl ustawiamy na '' bo migrujemy do nowego formatu images[]
+    const updated = await db.collection('posts').findOneAndUpdate(
+      { _id: post._id },
+      { $set: { caption: updatedCaption, images, imageUrl: '', updatedAt: new Date() } },
+      { returnDocument: 'after' },
+    );
+    const [populated] = await populatePosts([updated as unknown as Record<string, unknown>]);
+    res.json(populated);
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Like toggle ---
+// --- POST /api/posts/:id/like ---
+// Przełącza like na poście (toggle: like → unlike → like...).
 postsRouter.post('/:id/like', requireAuth, async (req: Request, res: Response) => {
   try {
-    const post = await Post.findById(req.params.id);
+    const db = getDb();
+    const post = await db.collection('posts').findOne({ _id: new ObjectId(String(req.params.id)) });
     if (!post) { res.status(404).json({ message: 'Post nie znaleziony' }); return; }
 
-    const uid = req.userId!;
-    const idx = post.likes.findIndex((id) => id.toString() === uid);
-    if (idx === -1) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      post.likes.push(uid as any);
+    const uid = new ObjectId(req.userId!);
+    const alreadyLiked = (post.likes as ObjectId[]).some((id) => id.toString() === req.userId);
+
+    if (alreadyLiked) {
+      // $pull usuwa element pasujący do wartości z tablicy likes
+      await db.collection('posts').updateOne({ _id: post._id }, { $pull: { likes: uid } } as never);
     } else {
-      post.likes.splice(idx, 1);
+      // $push dodaje ID użytkownika do tablicy likes
+      await db.collection('posts').updateOne({ _id: post._id }, { $push: { likes: uid } } as never);
     }
-    await post.save();
-    res.json({ likes: post.likes.map((id) => id.toString()) });
+
+    // Pobieramy aktualną tablicę likes i zwracamy jako stringi
+    const updated = await db.collection('posts').findOne({ _id: post._id }, { projection: { likes: 1 } });
+    res.json({ likes: (updated?.likes as ObjectId[] ?? []).map((id) => id.toString()) });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Dodaj komentarz ---
+// --- POST /api/posts/:id/comments ---
+// Dodaje komentarz do posta. Komentarz jest embeddowany w dokumencie posta.
 postsRouter.post('/:id/comments', requireAuth, async (req: Request, res: Response) => {
   try {
     const { text } = req.body;
     if (!text?.trim()) { res.status(400).json({ message: 'Komentarz nie może być pusty' }); return; }
 
-    const post = await Post.findById(req.params.id);
+    const db = getDb();
+    const post = await db.collection('posts').findOne({ _id: new ObjectId(String(req.params.id)) });
     if (!post) { res.status(404).json({ message: 'Post nie znaleziony' }); return; }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    post.comments.push({ user: req.userId as any, text: text.trim(), createdAt: new Date() });
-    await post.save();
+    // Komentarz jako subdokument z własnym _id (potrzebne do późniejszego usuwania)
+    const newComment = {
+      _id: new ObjectId(),
+      user: new ObjectId(req.userId!),
+      text: text.trim(),
+      createdAt: new Date(),
+    };
 
-    const updated = await populatePost(post._id);
-    res.status(201).json(updated!.comments[updated!.comments.length - 1]);
+    // $push wstawia komentarz na koniec tablicy comments w dokumencie posta
+    await db.collection('posts').updateOne(
+      { _id: post._id },
+      { $push: { comments: newComment } } as never,
+    );
+
+    // Pobieramy dane autora komentarza do zwrócenia w odpowiedzi
+    const commentUser = await db.collection('users').findOne(
+      { _id: new ObjectId(req.userId!) },
+      { projection: { username: 1, profilePicture: 1 } },
+    );
+    res.status(201).json({ ...newComment, user: commentUser });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
-// --- Usuń komentarz ---
+// --- DELETE /api/posts/:id/comments/:commentId ---
+// Usuwa komentarz. Może to zrobić autor komentarza LUB właściciel posta.
 postsRouter.delete('/:id/comments/:commentId', requireAuth, async (req: Request, res: Response) => {
   try {
-    const post = await Post.findById(req.params.id);
+    const db = getDb();
+    const post = await db.collection('posts').findOne({ _id: new ObjectId(String(req.params.id)) });
     if (!post) { res.status(404).json({ message: 'Post nie znaleziony' }); return; }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const comment = (post.comments as any[]).find((c) => c._id?.toString() === req.params.commentId);
+    // Wyszukujemy komentarz po jego _id w tablicy komentarzy
+    const comment = (post.comments as Record<string, unknown>[]).find(
+      (c) => (c._id as ObjectId).toString() === String(req.params.commentId),
+    );
     if (!comment) { res.status(404).json({ message: 'Komentarz nie znaleziony' }); return; }
 
-    const isCommentAuthor = comment.user.toString() === req.userId;
-    const isPostAuthor = post.author.toString() === req.userId;
+    // Sprawdzamy uprawnienia: autor komentarza lub właściciel posta
+    const isCommentAuthor = (comment.user as ObjectId).toString() === req.userId;
+    const isPostAuthor = (post.author as ObjectId).toString() === req.userId;
     if (!isCommentAuthor && !isPostAuthor) {
       res.status(403).json({ message: 'Brak uprawnień' }); return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (post.comments as any).pull({ _id: req.params.commentId });
-    await post.save();
+    // $pull z warunkiem na _id subdokumentu usuwa konkretny komentarz
+    await db.collection('posts').updateOne(
+      { _id: post._id },
+      { $pull: { comments: { _id: new ObjectId(String(req.params.commentId)) } } } as never,
+    );
     res.json({ message: 'Komentarz usunięty' });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
 
+// --- DELETE /api/posts/:id ---
+// Usuwa post i wszystkie powiązane pliki z dysku. Tylko właściciel może usunąć.
 postsRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const post = await Post.findOne({ _id: req.params.id, author: req.userId } as any);
+    const db = getDb();
+
+    // Warunek: _id i author muszą pasować
+    const post = await db.collection('posts').findOne({
+      _id: new ObjectId(String(req.params.id)),
+      author: new ObjectId(req.userId!),
+    });
     if (!post) { res.status(404).json({ message: 'Post nie istnieje lub brak uprawnień' }); return; }
-    post.images?.forEach(deleteLocalFile);
-    if (post.imageUrl) deleteLocalFile(post.imageUrl);
-    await post.deleteOne();
+
+    // Usuwamy pliki z dysku przed usunięciem dokumentu z bazy
+    (post.images as string[] ?? []).forEach(deleteLocalFile);
+    if (post.imageUrl) deleteLocalFile(post.imageUrl as string);
+
+    await db.collection('posts').deleteOne({ _id: post._id });
     res.json({ message: 'Post usunięty' });
   } catch { res.status(500).json({ message: 'Błąd serwera' }); }
 });
